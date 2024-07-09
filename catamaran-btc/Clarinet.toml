@@ -4,7 +4,11 @@ name = "catamaranswaps"
 
 
 [[project.requirements]]
-contract_id = "SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-lib-v1"
+contract_id = "SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-lib-v5"
+
+
+[[project.requirements]]
+contract_id = "SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-helper"
 
 [[project.requirements]]
 contract_id = "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard"
@@ -18,19 +22,12 @@ contract_id = "SP2C2YFP12AJZB4MABJBAJ55XECVS7E4PMMZ89YZR.usda-token"
 [contracts.btc-stx-swap]
 path = "contracts/btc-stx-swap.clar"
 depends_on = []
+epoch = "2.5"
+clarity = 2
 
-
-[contracts.init-xbtc]
-path = "contracts/init/init-xbtc.clar"
+[contracts.clarity-bitcoin-helper-wtx]
+path = "contracts/clarity-bitcoin-helper-wtx.clar"
 depends_on = []
-
-[contracts.btc-xbtc-swap]
-path = "contracts/btc-xbtc-swap.clar"
-depends_on = ["init-xbtc"]
-
-
-[contracts.btc-usda-swap]
-path = "contracts/btc-usda-swap.clar"
-depends_on = []
-
+epoch = "2.5"
+clarity = 2
 [notebooks]
