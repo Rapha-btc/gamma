@@ -1,24 +1,21 @@
 (define-constant ERR-OUT-OF-BOUNDS u1)
-(define-constant ERR_VERIFICATION_FAILED (err u1))
-(define-constant ERR_FAILED_TO_PARSE_TX (err u2))
 (define-constant ERR_INVALID_ID (err u3))
 (define-constant ERR_FORBIDDEN (err u4))
 (define-constant ERR_TX_VALUE_TOO_SMALL (err u5))
 (define-constant ERR_TX_NOT_FOR_RECEIVER (err u6))
 (define-constant ERR_ALREADY_DONE (err u7))
 (define-constant ERR_NO_STX_RECEIVER (err u8))
-(define-constant ERR_BTC_TX_ALREADY_USED (err u9))
+(define-constant ERR_BTC_TX_ALREADY_USED (err u9)) ;; this needs to be used to prevent double claiming?
 (define-constant ERR_IN_COOLDOWN (err u10))
 (define-constant ERR_ALREADY_RESERVED (err u11))
-(define-constant ERR_REPRICE_ALLOWED (err u12))
-(define-constant ERR_NOT_ALLOWED_TO_REPRICE (err u13))
-(define-constant ERR_ALREADY_PRICED (err u14))
 (define-constant ERR_NOT_PRICED (err u15))
 (define-constant ERR_NATIVE_FAILURE (err u99))
-(define-constant ERR_NO_BTC_RECEIVER (err u16))
+(define-constant ERR_NO_BTC_RECEIVER (err u16)) ;; this
 (define-constant ERR_NO_SUCH_OFFER (err u17))
 (define-constant ERR_WRONG_SATS (err u18))
-(define-constant ERR_WRONG_PREMIUM (err u19))
+(define-constant ERR_PREMIUM (err u19))
+
+;;(use-trait fees-trait .fees-trait.fees-trait) ;; the fee structure is defined by the calling client
 
 (define-constant nexus (as-contract tx-sender))
 (define-constant expiry u100)
@@ -68,7 +65,7 @@
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID)))
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_FORBIDDEN)
     (asserts! (get done swap) ERR_ALREADY_DONE)
-    (asserts! (not (get priced swap)) ERR_ALREADY_PRICED)
+    (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
     (ok (map-set swaps id (merge swap {
       sats: (some sats), 
@@ -79,7 +76,7 @@
 
 (define-public (reserve-priced-swap (id uint)) ;; BTC sender accepts the initial offer of STX sender
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-    (premium (unwrap! (get premium swap) ERR_NOT_PRICED)))
+    (premium (unwrap! (get premium swap) ERR_PREMIUM)))
     (asserts! (get priced swap) ERR_NOT_PRICED)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) ;; redundant
     (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
@@ -101,7 +98,7 @@
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
         (offer (unwrap! (get-swap-offer id btc-sender) ERR_NO_SUCH_OFFER)))
     (asserts! (is-eq sats (get sats offer)) ERR_WRONG_SATS)
-    (asserts! (is-eq premium (get premium offer)) ERR_WRONG_PREMIUM)
+    (asserts! (is-eq premium (get premium offer)) ERR_PREMIUM)
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_FORBIDDEN)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)

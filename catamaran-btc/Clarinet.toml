@@ -1,33 +1,49 @@
-
 [project]
-name = "catamaranswaps"
-
-
-[[project.requirements]]
-contract_id = "SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-lib-v5"
-
-
-[[project.requirements]]
-contract_id = "SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-helper"
+name = 'catamaranswaps'
+description = ''
+authors = []
+telemetry = false
+cache_dir = '.cache'
 
 [[project.requirements]]
-contract_id = "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard"
+contract_id = 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-lib-v5'
 
 [[project.requirements]]
-contract_id = "SP3DX3H4FEYZJZ586MFBS25ZW3HZDMEW92260R2PR.Wrapped-Bitcoin"
+contract_id = 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-helper'
 
 [[project.requirements]]
-contract_id = "SP2C2YFP12AJZB4MABJBAJ55XECVS7E4PMMZ89YZR.usda-token"
+contract_id = 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard'
 
+[[project.requirements]]
+contract_id = 'SP3DX3H4FEYZJZ586MFBS25ZW3HZDMEW92260R2PR.Wrapped-Bitcoin'
+
+[[project.requirements]]
+contract_id = 'SP2C2YFP12AJZB4MABJBAJ55XECVS7E4PMMZ89YZR.usda-token'
 [contracts.btc-stx-swap]
-path = "contracts/btc-stx-swap.clar"
-depends_on = []
-epoch = "2.5"
-clarity = 2
+path = 'contracts/btc-stx-swap.clar'
+clarity_version = 2
+epoch = 2.5
 
 [contracts.clarity-bitcoin-helper-wtx]
-path = "contracts/clarity-bitcoin-helper-wtx.clar"
-depends_on = []
-epoch = "2.5"
-clarity = 2
-[notebooks]
+path = 'contracts/clarity-bitcoin-helper-wtx.clar'
+clarity_version = 2
+epoch = 2.5
+
+[contracts.fees-trait]
+path = 'contracts/fees-trait.clar'
+clarity_version = 2
+epoch = 2.5
+
+[contracts.sip-010-trait-ft-standard]
+path = 'contracts/sip-010-trait-ft-standard.clar'
+clarity_version = 2
+epoch = 2.5
+
+[repl.analysis]
+passes = []
+
+[repl.analysis.check_checker]
+strict = false
+trusted_sender = false
+trusted_caller = false
+callee_filter = false
