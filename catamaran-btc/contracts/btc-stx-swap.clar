@@ -8,6 +8,7 @@
 (define-constant ERR_BTC_TX_ALREADY_USED (err u9)) ;; this needs to be used to prevent double claiming?
 (define-constant ERR_IN_COOLDOWN (err u10))
 (define-constant ERR_ALREADY_RESERVED (err u11))
+(define-constant ERR_ONLY_STX_SENDER (err u12))
 (define-constant ERR_NOT_PRICED (err u15))
 (define-constant ERR_NATIVE_FAILURE (err u99))
 (define-constant ERR_NO_BTC_RECEIVER (err u16)) ;; this
@@ -22,11 +23,11 @@
 (define-constant cooldown u6)
 (define-map swaps uint {sats: (optional uint), btc-receiver: (optional (buff 40)), ustx: uint, stx-receiver: (optional principal), stx-sender: principal, when: uint, done: bool, premium: (optional uint), priced: bool})
 
-(define-map swap-offers {swap-id: uint, btc-sender: principal} 
+(define-map swap-offers {swap-id: uint, stx-receiver: principal} 
   {sats: uint, premium: uint})
 
-(define-read-only (get-swap-offer (id uint) (btc-sender principal))
-  (map-get? swap-offers {swap-id: id, btc-sender: btc-sender}))
+(define-read-only (get-swap-offer (id uint) (stx-receiver principal))
+  (map-get? swap-offers {swap-id: id, stx-receiver: stx-receiver}))
 
 (define-data-var next-id uint u0)
 (define-map submitted-btc-txs (buff 128) uint) ;; map between accepted btc txs and swap ids
@@ -64,7 +65,7 @@
 (define-public (set-swap-price (id uint) (sats uint) (btc-receiver (buff 40)) (stx-receiver (optional principal)) (premium uint))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID)))
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_FORBIDDEN)
-    (asserts! (get done swap) ERR_ALREADY_DONE)
+    (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
     (ok (map-set swaps id (merge swap {
@@ -90,25 +91,25 @@
     (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
-    (try! (stx-transfer? premium tx-sender nexus)) ;; that premium should be in USDA ;; fees need to be baked in
-    (ok (map-set swap-offers {swap-id: id, btc-sender: tx-sender} 
+    (try! (stx-transfer? premium tx-sender nexus)) ;; that premium should be in USDA ;; fees need to be baked in ;; there's a memo?
+    (ok (map-set swap-offers {swap-id: id, stx-receiver: tx-sender} 
                  {sats: sats, premium: premium}))))
 
-(define-public (accept-swap-offer (id uint) (sats uint) (premium uint) (btc-sender principal))
+(define-public (accept-swap-offer (id uint) (sats uint) (premium uint) (stx-receiver principal))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-        (offer (unwrap! (get-swap-offer id btc-sender) ERR_NO_SUCH_OFFER)))
+        (offer (unwrap! (get-swap-offer id stx-receiver) ERR_NO_SUCH_OFFER)))
     (asserts! (is-eq sats (get sats offer)) ERR_WRONG_SATS)
     (asserts! (is-eq premium (get premium offer)) ERR_PREMIUM)
-    (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_FORBIDDEN)
+    (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_ONLY_STX_SENDER)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
     (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
     (try! (as-contract (stx-transfer? premium tx-sender (get stx-sender swap)))) ;; nexus releases premium
-    (map-delete swap-offers {swap-id: id, btc-sender: btc-sender})
+    (map-delete swap-offers {swap-id: id, stx-receiver: stx-receiver})
     (ok (map-set swaps id (merge swap {
       sats: (some sats), 
       premium: (some premium), 
-      stx-receiver: (some btc-sender),
+      stx-receiver: (some stx-receiver),
       when: burn-block-height ;; expiration kicks in
     }))))) ;; do we need to delete all the offers in the map?
 
@@ -117,7 +118,7 @@
         (offer (unwrap! (get-swap-offer id tx-sender) ERR_NO_SUCH_OFFER))
         (offerer tx-sender))
     (as-contract (try! (stx-transfer? (get premium offer) tx-sender offerer))) ;; this should be in USDA
-    (map-delete swap-offers {swap-id: id, btc-sender: tx-sender})
+    (map-delete swap-offers {swap-id: id, stx-receiver: tx-sender})
     (ok true)))
     
 (define-public (cancel-swap (id uint)) ;; note that if the swap is not reserved, only the stx-sender can cancel
@@ -203,3 +204,8 @@
                 ERR_TX_VALUE_TOO_SMALL)
             ERR_TX_NOT_FOR_RECEIVER))
         error (err (* error u1000)))))
+
+(define-read-only (get-swap (id uint)) ;; read-only function to get swap details by id
+  (match (map-get? swaps id)
+    swap (ok swap)
+    (err ERR_INVALID_ID)))
