@@ -1,5 +1,5 @@
 (define-constant fee-receiver tx-sender)
-(define-constant charging-ctr .stx-ft-swap) 
+(define-constant charging-ctr .btc-stx-swap) 
 
 ;; For information only.
 (define-public (get-fees (ustx uint))

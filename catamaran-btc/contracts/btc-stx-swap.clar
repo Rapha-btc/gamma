@@ -1,8 +1,6 @@
 (use-trait fees-trait .fees-trait.fees-trait) ;; the fee structure is defined by the calling client
 
-(define-constant ERR-OUT-OF-BOUNDS u1)
-(define-constant ERR_INVALID_ID (err u3))
-(define-constant ERR_FORBIDDEN (err u4))
+(define-constant ERR-OUT-OF-BOUNDS u4) ;; (err u1) -- sender does not have enough balance to transfer (err u2) -- sender and recipient are the same principal (err u3) -- amount to send is non-positive
 (define-constant ERR_TX_VALUE_TOO_SMALL (err u5))
 (define-constant ERR_TX_NOT_FOR_RECEIVER (err u6))
 (define-constant ERR_ALREADY_DONE (err u7))
@@ -11,14 +9,16 @@
 (define-constant ERR_IN_COOLDOWN (err u10))
 (define-constant ERR_ALREADY_RESERVED (err u11))
 (define-constant ERR_ONLY_STX_SENDER (err u12))
+(define-constant ERR_INVALID_ID (err u13))
+(define-constant ERR_FORBIDDEN (err u14))
 (define-constant ERR_NOT_PRICED (err u15))
-(define-constant ERR_NATIVE_FAILURE (err u99))
 (define-constant ERR_NO_BTC_RECEIVER (err u16)) ;; this
 (define-constant ERR_NO_SUCH_OFFER (err u17))
 (define-constant ERR_WRONG_SATS (err u18))
 (define-constant ERR_PREMIUM (err u19))
 (define-constant ERR_INVALID_FEES_TRAIT (err u20))
 (define-constant ERR_INVALID_STX_RECEIVER (err u21))
+(define-constant ERR_NATIVE_FAILURE (err u99)) ;; this is not necessary?
 (define-constant nexus (as-contract tx-sender))
 (define-constant expiry u100)
 (define-constant cooldown u6)
@@ -56,8 +56,8 @@
       {sats: none, btc-receiver: none, ustx: ustx, stx-receiver: none,
         stx-sender: tx-sender, when: burn-block-height, done: false, premium: none, priced: false, fees: (contract-of fees)}) ERR_INVALID_ID)
     (var-set next-id (+ id u1))
-    (try! (contract-call? fees hold-fees ustx))
-    (match (stx-transfer? ustx tx-sender (as-contract tx-sender))
+    (try! (contract-call? fees hold-fees ustx)) ;; memo?
+    (match (stx-transfer? ustx tx-sender (as-contract tx-sender)) ;; memo?
       success (ok id)
       error (err (* error u1000)))))
 
