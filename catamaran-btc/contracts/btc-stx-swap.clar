@@ -15,13 +15,15 @@
 (define-constant ERR_NO_SUCH_OFFER (err u17))
 (define-constant ERR_WRONG_SATS (err u18))
 (define-constant ERR_PREMIUM (err u19))
+(define-constant ERR_INVALID_FEES_TRAIT (err u20))
+(define-constant ERR_INVALID_STX_RECEIVER (err u21))
 
-;;(use-trait fees-trait .fees-trait.fees-trait) ;; the fee structure is defined by the calling client
+(use-trait fees-trait .fees-trait.fees-trait) ;; the fee structure is defined by the calling client
 
 (define-constant nexus (as-contract tx-sender))
 (define-constant expiry u100)
 (define-constant cooldown u6)
-(define-map swaps uint {sats: (optional uint), btc-receiver: (optional (buff 40)), ustx: uint, stx-receiver: (optional principal), stx-sender: principal, when: uint, done: bool, premium: (optional uint), priced: bool})
+(define-map swaps uint {sats: (optional uint), btc-receiver: (optional (buff 40)), ustx: uint, stx-receiver: (optional principal), stx-sender: principal, when: uint, done: bool, premium: (optional uint), priced: bool, fees: principal})
 
 (define-map swap-offers {swap-id: uint, stx-receiver: principal} 
   {sats: uint, premium: uint})
@@ -52,12 +54,13 @@
     locktime: (buff 4)}) (pubscriptkey (buff 40)))
     (ok (fold find-out (get outs tx) {pubscriptkey: pubscriptkey, out: none})))
 
-(define-public (collateralize-swap (ustx uint) (btc-receiver (optional (buff 40))) (stx-receiver (optional principal)))
+(define-public (collateralize-swap (ustx uint) (btc-receiver (optional (buff 40))) (stx-receiver (optional principal)) (fees <fees-trait>))
   (let ((id (var-get next-id)))
     (asserts! (map-insert swaps id
       {sats: none, btc-receiver: none, ustx: ustx, stx-receiver: none,
-        stx-sender: tx-sender, when: burn-block-height, done: false, premium: none, priced: false}) ERR_INVALID_ID)
+        stx-sender: tx-sender, when: burn-block-height, done: false, premium: none, priced: false, fees: (contract-of fees)}) ERR_INVALID_ID)
     (var-set next-id (+ id u1))
+    (try! (contract-call? fees hold-fees ustx))
     (match (stx-transfer? ustx tx-sender (as-contract tx-sender))
       success (ok id)
       error (err (* error u1000)))))
@@ -82,8 +85,8 @@
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) ;; redundant
     (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
-    (and (> premium u0))
-      (try! (stx-transfer? premium tx-sender (get stx-sender swap)))
+    (and (> premium u0)
+      (try! (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))
     (ok (map-set swaps id (merge swap {stx-receiver: (some tx-sender), when: burn-block-height}))))) ;; expiration kicks in
 
 (define-public (make-swap-offer (id uint) (sats uint) (premium uint)) ;; BTC sender makes an offer
@@ -91,7 +94,7 @@
     (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
-    (try! (stx-transfer? premium tx-sender nexus)) ;; that premium should be in USDA ;; fees need to be baked in ;; there's a memo?
+    (try! (contract-call? .usda-token transfer premium tx-sender nexus (some 0x707265746D69756D)))
     (ok (map-set swap-offers {swap-id: id, stx-receiver: tx-sender} 
                  {sats: sats, premium: premium}))))
 
@@ -104,7 +107,7 @@
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
     (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
-    (try! (as-contract (stx-transfer? premium tx-sender (get stx-sender swap)))) ;; nexus releases premium
+    (try! (as-contract (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))));; nexus releases premium
     (map-delete swap-offers {swap-id: id, stx-receiver: stx-receiver})
     (ok (map-set swaps id (merge swap {
       sats: (some sats), 
@@ -117,20 +120,22 @@
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
         (offer (unwrap! (get-swap-offer id tx-sender) ERR_NO_SUCH_OFFER))
         (offerer tx-sender))
-    (as-contract (try! (stx-transfer? (get premium offer) tx-sender offerer))) ;; this should be in USDA
+    (as-contract (try! (contract-call? .usda-token transfer (get premium offer) tx-sender offerer (some 0x707265746D69756D))))
     (map-delete swap-offers {swap-id: id, stx-receiver: tx-sender})
     (ok true)))
     
-(define-public (cancel-swap (id uint)) ;; note that if the swap is not reserved, only the stx-sender can cancel
+(define-public (cancel-swap (id uint) (fees <fees-trait>)) ;; note that if the swap is not reserved, only the stx-sender can cancel
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID)))
     (asserts!
       (or
         (and (is-none (get stx-receiver swap)) (is-eq tx-sender (get stx-sender swap))) ;; stx-sender can cancel anytime if swap is not reserved
         (and (is-some (get stx-receiver swap)) (> burn-block-height (+ (get when swap) expiry))) ;; any user can cancel after the expiry period if swap was reserved
       ) 
-        ERR_FORBIDDEN) 
+        ERR_FORBIDDEN)
+    (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT) 
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (map-set swaps id (merge swap {done: true}))
+    (try! (contract-call? fees release-fees (get ustx swap)))
     (as-contract (stx-transfer? (get ustx swap) tx-sender (get stx-sender swap)))))
 
 (define-public (submit-swap 
@@ -143,20 +148,22 @@
       outs: (list 8
         {value: (buff 8), scriptPubKey: (buff 128)}),
       locktime: (buff 4)}) 
-    (proof { tx-index: uint, hashes: (list 12 (buff 32)), tree-depth: uint })) ;; any user can submit a tx that contains the swap
+    (proof { tx-index: uint, hashes: (list 12 (buff 32)), tree-depth: uint })
+    (fees <fees-trait>)) ;; any user can submit a tx that contains the swap
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
         (tx-buff (contract-call? 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-helper concat-tx tx))
         (stx-receiver (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))
-        (btc-receiver (unwrap! (get btc-receiver swap) ERR_NO_BTC_RECEIVER))
-        )
-      (asserts! (is-eq tx-sender stx-receiver) ERR_FORBIDDEN)
+        (btc-receiver (unwrap! (get btc-receiver swap) ERR_NO_BTC_RECEIVER)))
+      (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
+      (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT)
+      (asserts! (not (get done swap)) ERR_ALREADY_DONE)
+      (try! (contract-call? fees pay-fees (get ustx swap)))
       (match (contract-call? 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-lib-v5 was-tx-mined-compact
                 height tx-buff blockheader proof )
         result
           (let
             ((sats (unwrap! (get sats swap) ERR_NOT_PRICED)))
             (asserts! (is-none (map-get? submitted-btc-txs result)) ERR_BTC_TX_ALREADY_USED)
-            (asserts! (not (get done swap)) ERR_ALREADY_DONE)
             (match (get out (unwrap! (get-out-value tx btc-receiver) ERR_NATIVE_FAILURE))
               out (if (>= (get value out) sats)
                 (begin
@@ -184,17 +191,22 @@
     (witness-merkle-root (buff 32))
     (witness-reserved-value (buff 32))
     (ctx (buff 1024))
-    (cproof (list 14 (buff 32))))
+    (cproof (list 14 (buff 32)))
+    (fees <fees-trait>))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
+        (stx-receiver (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))
         (btc-receiver (unwrap! (get btc-receiver swap) ERR_NO_BTC_RECEIVER))
         (sats (unwrap! (get sats swap) ERR_NOT_PRICED))
         (tx-buff (contract-call? .clarity-bitcoin-helper-wtx concat-wtx wtx witness-data)))
+      (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
+      (asserts! (not (get done swap)) ERR_ALREADY_DONE)
+      (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT)
+      (try! (contract-call? fees pay-fees (get ustx swap)))
       (match (contract-call? 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-lib-v5 was-segwit-tx-mined-compact
                 height tx-buff header tx-index tree-depth wproof witness-merkle-root witness-reserved-value ctx cproof )
         result
           (begin
             (asserts! (is-none (map-get? submitted-btc-txs result)) ERR_BTC_TX_ALREADY_USED)
-            (asserts! (not (get done swap)) ERR_ALREADY_DONE)
             (match (get out (unwrap! (get-out-value wtx btc-receiver) ERR_NATIVE_FAILURE))
               out (if (>= (get value out) sats)
                 (begin

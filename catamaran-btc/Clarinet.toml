@@ -29,6 +29,11 @@ path = 'contracts/clarity-bitcoin-helper-wtx.clar'
 clarity_version = 2
 epoch = 2.5
 
+[contracts.fees]
+path = 'contracts/fees.clar'
+clarity_version = 2
+epoch = 2.5
+
 [contracts.fees-trait]
 path = 'contracts/fees-trait.clar'
 clarity_version = 2
@@ -39,6 +44,10 @@ path = 'contracts/sip-010-trait-ft-standard.clar'
 clarity_version = 2
 epoch = 2.5
 
+[contracts.usda-token]
+path = 'contracts/usda-token.clar'
+clarity_version = 2
+epoch = 2.5
 [repl.analysis]
 passes = []
 
