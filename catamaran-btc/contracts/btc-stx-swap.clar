@@ -63,7 +63,7 @@
 
 (define-public (set-swap-price (id uint) (sats uint) (btc-receiver (buff 40)) (stx-receiver (optional principal)) (premium uint))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID)))
-    (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_FORBIDDEN)
+    (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_RECEIVER)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
