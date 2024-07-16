@@ -22,7 +22,7 @@
 ;; It relies on the logic of the charging-ctr that this contract.
 (define-public (release-fees (ustx uint))
   (let ((user tx-sender))
-    (asserts! (is-eq contract-caller charging-ctr) ERR_NOT_AUTH)
+    (asserts! (is-eq contract-caller charging-ctr) ERR_NOT_AUTH) ;; the fees go to the releaser
     (as-contract (stx-transfer? (jump-fee ustx) tx-sender user)))) ;; quantum jump from Bitcoin to Stacks
 
 ;; Pay fee for the given amount if swap was executed.

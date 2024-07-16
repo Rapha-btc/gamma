@@ -18,6 +18,7 @@
 (define-constant ERR_PREMIUM (err u19))
 (define-constant ERR_INVALID_FEES_TRAIT (err u20))
 (define-constant ERR_INVALID_STX_RECEIVER (err u21))
+(define-constant ERR_OFFER_ALREADY_EXISTS (err u22)) ;; one offer at a time
 (define-constant ERR_NATIVE_FAILURE (err u99)) ;; this is not necessary?
 (define-constant nexus (as-contract tx-sender))
 (define-constant expiry u100)
@@ -86,6 +87,7 @@
 
 (define-public (make-swap-offer (id uint) (sats uint) (premium uint)) ;; BTC sender makes an offer
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID)))
+    (asserts! (is-none (get-swap-offer id tx-sender)) ERR_OFFER_ALREADY_EXISTS)
     (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
