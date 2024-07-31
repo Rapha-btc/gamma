@@ -8,25 +8,27 @@
 (define-constant ERR_BTC_TX_ALREADY_USED (err u9)) ;; this needs to be used to prevent double claiming?
 (define-constant ERR_IN_COOLDOWN (err u10))
 (define-constant ERR_ALREADY_RESERVED (err u11))
-(define-constant ERR_ONLY_STX_SENDER (err u12))
+(define-constant ERR_INVALID_STX_SENDER (err u12))
 (define-constant ERR_INVALID_ID (err u13))
 (define-constant ERR_FORBIDDEN (err u14))
 (define-constant ERR_NOT_PRICED (err u15))
 (define-constant ERR_NO_BTC_RECEIVER (err u16)) ;; this
 (define-constant ERR_NO_SUCH_OFFER (err u17))
-(define-constant ERR_WRONG_SATS (err u18))
-(define-constant ERR_PREMIUM (err u19))
-(define-constant ERR_INVALID_FEES_TRAIT (err u20))
-(define-constant ERR_INVALID_STX_RECEIVER (err u21))
-(define-constant ERR_OFFER_ALREADY_EXISTS (err u22)) ;; one offer at a time
+(define-constant ERR_USTX (err u18))
+(define-constant ERR_SATS (err u19))
+(define-constant ERR_PREMIUM (err u20))
+(define-constant ERR_INVALID_FEES_TRAIT (err u21))
+(define-constant ERR_INVALID_STX_RECEIVER (err u22))
+(define-constant ERR_OFFER_ALREADY_EXISTS (err u23)) ;; one offer at a time
+(define-constant ERR_INVALID_OFFER (err u24))
 (define-constant ERR_NATIVE_FAILURE (err u99)) ;; this is not necessary?
 (define-constant nexus (as-contract tx-sender))
 (define-constant expiry u100)
 (define-constant cooldown u6)
 
-(define-map swaps uint {sats: (optional uint), btc-receiver: (optional (buff 40)), ustx: uint, stx-receiver: (optional principal), stx-sender: principal, when: uint, done: bool, premium: (optional uint), priced: bool, fees: principal})
-(define-map swap-offers {swap-id: uint, stx-receiver: principal} 
-  {sats: uint, premium: uint})
+(define-map swaps uint {sats: (optional uint), btc-receiver: (optional (buff 40)), stx-sender: principal, ustx: uint, stx-receiver: (optional principal), when: uint, done: bool, premium: (optional uint), priced: bool, fees: principal})
+(define-map swap-offers {stx-receiver: principal, swap-id: (optional uint)} ;; allows a stx-receiver to do an offer per swap-id and 1 without swap-id
+  {stx-sender: (optional principal), ustx: uint, sats: uint, premium: uint})
 (define-map submitted-btc-txs (buff 128) uint) ;; map between accepted btc txs and swap ids
 
 (define-data-var next-id uint u0)
@@ -51,7 +53,7 @@
     locktime: (buff 4)}) (pubscriptkey (buff 40)))
     (ok (fold find-out (get outs tx) {pubscriptkey: pubscriptkey, out: none})))
 
-(define-public (collateralize-swap (ustx uint) (btc-receiver (optional (buff 40))) (stx-receiver (optional principal)) (fees <fees-trait>))
+(define-public (collateralize-swap (ustx uint) (btc-receiver (optional (buff 40))) (fees <fees-trait>))
   (let ((id (var-get next-id)))
     (asserts! (map-insert swaps id
       {sats: none, btc-receiver: none, ustx: ustx, stx-receiver: none,
@@ -77,49 +79,103 @@
 
 (define-public (reserve-priced-swap (id uint)) ;; BTC sender accepts the initial offer of STX sender
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-    (premium (unwrap! (get premium swap) ERR_PREMIUM)))
+    (premium (unwrap! (get premium swap) ERR_PREMIUM))
+    (stx-receiver (default-to tx-sender (get stx-receiver swap))))
     (asserts! (get priced swap) ERR_NOT_PRICED)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) ;; redundant
-    (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
+    (asserts! (is-eq tx-sender stx-receiver) ERR_ALREADY_RESERVED)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))
     (ok (map-set swaps id (merge swap {stx-receiver: (some tx-sender), when: burn-block-height}))))) ;; expiration kicks in
 
-(define-public (make-swap-offer (id uint) (sats uint) (premium uint)) ;; BTC sender makes an offer
-  (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID)))
-    (asserts! (is-none (get-swap-offer id tx-sender)) ERR_OFFER_ALREADY_EXISTS)
-    (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
-    (asserts! (not (get done swap)) ERR_ALREADY_DONE)
-    (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
-    (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender nexus (some 0x707265746D69756D))))
-    (ok (map-set swap-offers {swap-id: id, stx-receiver: tx-sender} 
-                 {sats: sats, premium: premium}))))
+;; (define-public (make-offer-to-swap (id uint) (sats uint) (premium uint)) ;; BTC sender makes an offer
+;;   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
+;;         (stx-receiver (default-to tx-sender (get stx-receiver swap))))
+;;     (asserts! (> sats u0) ERR_INVALID_OFFER)
+;;     (asserts! (is-none (get-swap-offer tx-sender (some id))) ERR_OFFER_ALREADY_EXISTS)
+;;     (asserts! (is-eq tx-sender stx-receiver) ERR_ALREADY_RESERVED)
+;;     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
+;;     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
+;;     (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender nexus (some 0x707265746D69756D))))
+;;     (ok (map-set swap-offers {stx-receiver: tx-sender, swap-id: (some id)} 
+;;                  {stx-sender: (some (get stx-sender swap)), ustx: (get ustx swap), sats: sats, premium: premium}))))
 
-(define-public (accept-swap-offer (id uint) (sats uint) (premium uint) (stx-receiver principal))
+;; (define-public (make-offer-to-new
+;;   (stx-sender (optional principal)) 
+;;   (ustx uint)
+;;   (sats uint) 
+;;   (premium uint))
+;;   (begin
+;;     (asserts! (and (> ustx u0) (> sats u0)) ERR_INVALID_OFFER)
+;;     (asserts! (is-none (get-swap-offer tx-sender none)) ERR_OFFER_ALREADY_EXISTS)
+;;     (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender nexus (some 0x707265746D69756D))))
+;;     (ok (map-set swap-offers { stx-receiver: tx-sender, swap-id: none } { 
+;;       stx-sender: stx-sender, 
+;;       ustx: ustx, 
+;;       sats: sats, 
+;;       premium: premium 
+;;     }))))
+;; this function replaces the 2 functions above if correct: make-offer-to-swap and make-offer-to-new
+(define-public (make-swap-offer
+  (id (optional uint))
+  (stx-sender (optional principal))
+  (ustx (optional uint))
+  (sats uint)
+  (premium uint))
+  (begin
+    (asserts! (is-none (get-swap-offer tx-sender id)) ERR_OFFER_ALREADY_EXISTS)
+    (asserts! (> sats u0) ERR_INVALID_OFFER)
+    (match id
+      some-id 
+        (let ((swap (unwrap! (map-get? swaps some-id) ERR_INVALID_ID))
+              (stx-receiver (default-to tx-sender (get stx-receiver swap))))
+          (asserts! (is-eq tx-sender stx-receiver) ERR_ALREADY_RESERVED)
+          (asserts! (not (get done swap)) ERR_ALREADY_DONE)
+          (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
+          (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender nexus (some 0x707265746D69756D))))
+          (ok (map-set swap-offers 
+            { stx-receiver: tx-sender, swap-id: (some some-id) }
+            { stx-sender: (some (get stx-sender swap)),
+              ustx: (get ustx swap),
+              sats: sats,
+              premium: premium })))
+      (begin
+        (asserts! (and (is-some ustx) (> (unwrap-panic ustx) u0)) ERR_INVALID_OFFER)
+        (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender nexus (some 0x707265746D69756D))))
+        (ok (map-set swap-offers 
+          { stx-receiver: tx-sender, swap-id: none }
+          { stx-sender: stx-sender,
+            ustx: (unwrap-panic ustx),
+            sats: sats,
+            premium: premium })))))
+)
+
+(define-public (accept-swap-offer (id uint) (offer-swap-id (optional uint)) (stx-receiver principal))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-        (offer (unwrap! (get-swap-offer id stx-receiver) ERR_NO_SUCH_OFFER)))
-    (asserts! (is-eq sats (get sats offer)) ERR_WRONG_SATS)
-    (asserts! (is-eq premium (get premium offer)) ERR_PREMIUM)
-    (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_ONLY_STX_SENDER)
+        (offer (unwrap! (get-swap-offer stx-receiver offer-swap-id) ERR_NO_SUCH_OFFER))
+        (premium (get premium offer))
+        (offer-stx-sender (default-to tx-sender (get stx-sender offer))))
+    (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_SENDER)
+    (asserts! (is-eq tx-sender offer-stx-sender) ERR_INVALID_STX_SENDER) ;; important (not redundant and by transitivity...)
+    (asserts! (is-eq (some premium) (get premium swap)) ERR_PREMIUM)
+    (asserts! (is-eq (get ustx offer) (get ustx swap)) ERR_USTX)
+    (asserts! (is-eq (some (get sats offer)) (get sats swap)) ERR_SATS)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
     (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
     (and (> premium u0) (try! (as-contract (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))) ;; nexus releases premium
-    (map-delete swap-offers {swap-id: id, stx-receiver: stx-receiver})
+    (map-delete swap-offers {stx-receiver: stx-receiver, swap-id: offer-swap-id })
     (ok (map-set swaps id (merge swap {
-      sats: (some sats), 
-      premium: (some premium), 
       stx-receiver: (some stx-receiver),
-      when: burn-block-height ;; expiration kicks in
-    }))))) ;; do we need to delete all the offers in the map?
+      when: burn-block-height 
+    }))))) ;; do we need to delete all the offers in the map? ;; expiration kicks in
 
-(define-public (cancel-offer (id uint))
-  (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-        (offer (unwrap! (get-swap-offer id tx-sender) ERR_NO_SUCH_OFFER))
+(define-public (cancel-offer (offer-swap-id (optional uint)))
+  (let ((offer (unwrap! (get-swap-offer tx-sender offer-swap-id) ERR_NO_SUCH_OFFER))
         (premium (get premium offer))
         (offerer tx-sender))
     (and (> premium u0) (as-contract (try! (contract-call? .usda-token transfer premium tx-sender offerer (some 0x707265746D69756D)))))
-    (map-delete swap-offers {swap-id: id, stx-receiver: tx-sender})
+    (map-delete swap-offers {stx-receiver: tx-sender, swap-id: offer-swap-id })
     (ok true)))
     
 (define-public (cancel-swap (id uint) (fees <fees-trait>)) ;; note that if the swap is not reserved, only the stx-sender can cancel
@@ -132,9 +188,9 @@
         ERR_FORBIDDEN)
     (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT) 
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
-    (map-set swaps id (merge swap {done: true}))
     (try! (contract-call? fees release-fees (get ustx swap)))
-    (as-contract (stx-transfer? (get ustx swap) tx-sender (get stx-sender swap)))))
+    (try! (as-contract (stx-transfer? (get ustx swap) tx-sender (get stx-sender swap))))
+    (ok (map-set swaps id (merge swap {done: true})))))
 
 (define-public (submit-swap 
     (id uint)
@@ -220,5 +276,5 @@
     swap (ok swap)
     (err ERR_INVALID_ID)))
 
-(define-read-only (get-swap-offer (id uint) (stx-receiver principal))
-  (map-get? swap-offers {swap-id: id, stx-receiver: stx-receiver}))
+(define-read-only (get-swap-offer (stx-receiver principal) (id (optional uint)))
+  (map-get? swap-offers {stx-receiver: stx-receiver, swap-id: id}))
