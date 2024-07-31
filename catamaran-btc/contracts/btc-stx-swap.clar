@@ -53,7 +53,7 @@
     locktime: (buff 4)}) (pubscriptkey (buff 40)))
     (ok (fold find-out (get outs tx) {pubscriptkey: pubscriptkey, out: none})))
 
-(define-public (collateralize-swap (ustx uint) (btc-receiver (optional (buff 40))) (fees <fees-trait>))
+(define-public (collateralize-stx (ustx uint) (btc-receiver (optional (buff 40))) (fees <fees-trait>))
   (let ((id (var-get next-id)))
     (asserts! (map-insert swaps id
       {sats: none, btc-receiver: none, ustx: ustx, stx-receiver: none,
@@ -64,12 +64,11 @@
       success (ok id)
       error (err (* error u1000)))))
 
-(define-public (set-swap-price (id uint) (sats uint) (btc-receiver (buff 40)) (stx-receiver (optional principal)) (premium uint))
+(define-public (set-ask-price (id uint) (sats uint) (btc-receiver (buff 40)) (stx-receiver (optional principal)) (premium uint))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID)))
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_RECEIVER)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
-    (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED)
-    (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
+    (asserts! (is-none (get stx-receiver swap)) ERR_ALREADY_RESERVED) ;; no cool down so make sure ulterior func cool down
     (ok (map-set swaps id (merge swap {
       sats: (some sats), 
       btc-receiver: (some btc-receiver), 
@@ -77,25 +76,37 @@
       premium: (some premium), 
       priced: true})))))
 
-(define-public (reserve-priced-swap (id uint)) ;; BTC sender accepts the initial offer of STX sender
+(define-public (make-ask
+  (ustx uint) 
+  (btc-receiver (buff 40)) 
+  (sats uint)
+  (stx-receiver (optional principal))
+  (premium uint)
+  (fees <fees-trait>))
+  (let 
+    ((swap-id (try! (collateralize-stx ustx (some btc-receiver) fees))))
+    (try! (set-ask-price swap-id sats btc-receiver stx-receiver premium))
+    (ok swap-id)))
+
+(define-public (take-ask (id uint)) ;; BTC sender accepts the initial offer of STX sender
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
     (premium (unwrap! (get premium swap) ERR_PREMIUM))
     (stx-receiver (default-to tx-sender (get stx-receiver swap))))
     (asserts! (get priced swap) ERR_NOT_PRICED)
-    (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) ;; redundant
+    (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) 
     (asserts! (is-eq tx-sender stx-receiver) ERR_ALREADY_RESERVED)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))
     (ok (map-set swaps id (merge swap {stx-receiver: (some tx-sender), when: burn-block-height}))))) ;; expiration kicks in
 
-(define-public (make-swap-offer
+(define-public (make-bid
   (id (optional uint))
   (stx-sender (optional principal))
   (ustx (optional uint))
   (sats uint)
   (premium uint)) ;; allowing the BTC sender to initiate swap offers - without a swap-id
   (begin
-    (asserts! (is-none (get-swap-offer tx-sender id)) ERR_OFFER_ALREADY_EXISTS)
+    (asserts! (is-none (get-bid tx-sender id)) ERR_OFFER_ALREADY_EXISTS)
     (asserts! (> sats u0) ERR_INVALID_OFFER)
     (match id
       some-id 
@@ -122,9 +133,9 @@
             premium: premium })))))
 )
 
-(define-public (accept-swap-offer (id uint) (offer-swap-id (optional uint)) (stx-receiver principal))
+(define-public (take-bid (id uint) (offer-swap-id (optional uint)) (stx-receiver principal))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-        (offer (unwrap! (get-swap-offer stx-receiver offer-swap-id) ERR_NO_SUCH_OFFER))
+        (offer (unwrap! (get-bid stx-receiver offer-swap-id) ERR_NO_SUCH_OFFER))
         (premium (get premium offer))
         (offer-stx-sender (default-to tx-sender (get stx-sender offer))))
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_SENDER)
@@ -142,15 +153,15 @@
       when: burn-block-height 
     }))))) ;; do we need to delete all the offers in the map? ;; expiration kicks in
 
-(define-public (cancel-offer (offer-swap-id (optional uint)))
-  (let ((offer (unwrap! (get-swap-offer tx-sender offer-swap-id) ERR_NO_SUCH_OFFER))
+(define-public (cancel-bid (offer-swap-id (optional uint)))
+  (let ((offer (unwrap! (get-bid tx-sender offer-swap-id) ERR_NO_SUCH_OFFER))
         (premium (get premium offer))
         (offerer tx-sender))
     (and (> premium u0) (as-contract (try! (contract-call? .usda-token transfer premium tx-sender offerer (some 0x707265746D69756D)))))
     (map-delete swap-offers {stx-receiver: tx-sender, swap-id: offer-swap-id })
     (ok true)))
     
-(define-public (cancel-swap (id uint) (fees <fees-trait>)) ;; note that if the swap is not reserved, only the stx-sender can cancel
+(define-public (cancel-ask-or-swap (id uint) (fees <fees-trait>)) ;; note that if the swap is not reserved, only the stx-sender can cancel
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID)))
     (asserts!
       (or
@@ -180,6 +191,7 @@
         (tx-buff (contract-call? 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-helper concat-tx tx))
         (stx-receiver (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))
         (btc-receiver (unwrap! (get btc-receiver swap) ERR_NO_BTC_RECEIVER)))
+      (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) 
       (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
       (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT)
       (asserts! (not (get done swap)) ERR_ALREADY_DONE)
@@ -224,6 +236,7 @@
         (btc-receiver (unwrap! (get btc-receiver swap) ERR_NO_BTC_RECEIVER))
         (sats (unwrap! (get sats swap) ERR_NOT_PRICED))
         (tx-buff (contract-call? .clarity-bitcoin-helper-wtx concat-wtx wtx witness-data)))
+      (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) 
       (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
       (asserts! (not (get done swap)) ERR_ALREADY_DONE)
       (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT)
@@ -248,5 +261,5 @@
     swap (ok swap)
     (err ERR_INVALID_ID)))
 
-(define-read-only (get-swap-offer (stx-receiver principal) (id (optional uint)))
+(define-read-only (get-bid (stx-receiver principal) (id (optional uint)))
   (map-get? swap-offers {stx-receiver: stx-receiver, swap-id: id}))
