@@ -88,40 +88,12 @@
     (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))
     (ok (map-set swaps id (merge swap {stx-receiver: (some tx-sender), when: burn-block-height}))))) ;; expiration kicks in
 
-;; (define-public (make-offer-to-swap (id uint) (sats uint) (premium uint)) ;; BTC sender makes an offer
-;;   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-;;         (stx-receiver (default-to tx-sender (get stx-receiver swap))))
-;;     (asserts! (> sats u0) ERR_INVALID_OFFER)
-;;     (asserts! (is-none (get-swap-offer tx-sender (some id))) ERR_OFFER_ALREADY_EXISTS)
-;;     (asserts! (is-eq tx-sender stx-receiver) ERR_ALREADY_RESERVED)
-;;     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
-;;     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
-;;     (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender nexus (some 0x707265746D69756D))))
-;;     (ok (map-set swap-offers {stx-receiver: tx-sender, swap-id: (some id)} 
-;;                  {stx-sender: (some (get stx-sender swap)), ustx: (get ustx swap), sats: sats, premium: premium}))))
-
-;; (define-public (make-offer-to-new
-;;   (stx-sender (optional principal)) 
-;;   (ustx uint)
-;;   (sats uint) 
-;;   (premium uint))
-;;   (begin
-;;     (asserts! (and (> ustx u0) (> sats u0)) ERR_INVALID_OFFER)
-;;     (asserts! (is-none (get-swap-offer tx-sender none)) ERR_OFFER_ALREADY_EXISTS)
-;;     (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender nexus (some 0x707265746D69756D))))
-;;     (ok (map-set swap-offers { stx-receiver: tx-sender, swap-id: none } { 
-;;       stx-sender: stx-sender, 
-;;       ustx: ustx, 
-;;       sats: sats, 
-;;       premium: premium 
-;;     }))))
-;; this function replaces the 2 functions above if correct: make-offer-to-swap and make-offer-to-new
 (define-public (make-swap-offer
   (id (optional uint))
   (stx-sender (optional principal))
   (ustx (optional uint))
   (sats uint)
-  (premium uint))
+  (premium uint)) ;; allowing the BTC sender to initiate swap offers - without a swap-id
   (begin
     (asserts! (is-none (get-swap-offer tx-sender id)) ERR_OFFER_ALREADY_EXISTS)
     (asserts! (> sats u0) ERR_INVALID_OFFER)
