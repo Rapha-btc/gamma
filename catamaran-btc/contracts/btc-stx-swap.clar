@@ -30,7 +30,7 @@
 (define-map swaps uint {sats: (optional uint), btc-receiver: (optional (buff 40)), stx-sender: principal, ustx: uint, stx-receiver: (optional principal), when: uint, done: bool, premium: (optional uint), ask-priced: bool, fees: principal})
 (define-map swap-offers {stx-receiver: principal, swap-id: (optional uint)} ;; allows a stx-receiver to do an offer per swap-id and 1 without swap-id
   {stx-sender: (optional principal), ustx: uint, sats: uint, premium: uint})
-(define-map submitted-btc-txs uint bool) ;; map between accepted btc txs and swap ids
+(define-map submitted-btc-txs (buff 128) uint)  ;; map between accepted btc txs and swap ids
 
 (define-data-var next-id uint u0)
 
@@ -255,16 +255,16 @@
         result
           (let
             (
-              (result-is-true (asserts! result ERR_PROOF_FALSE))
+              ;; (result-is-true (asserts! result ERR_PROOF_FALSE))
               (sats (unwrap! (get sats swap) ERR_NOT_PRICED))
               
               )
-            (asserts! (is-none (map-get? submitted-btc-txs id)) ERR_BTC_TX_ALREADY_USED)
+            (asserts! (is-none (map-get? submitted-btc-txs result)) ERR_BTC_TX_ALREADY_USED)
             (match (get out (unwrap! (get-out-value tx btc-receiver) ERR_NATIVE_FAILURE))
               out (if (>= (get value out) sats)
                 (begin
                       (map-set swaps id (merge swap {done: true}))
-                      (map-set submitted-btc-txs id result)
+                      (map-set submitted-btc-txs result id)
                       (as-contract (stx-transfer? (get ustx swap) tx-sender (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))))
                 ERR_TX_VALUE_TOO_SMALL)
             ERR_TX_NOT_FOR_RECEIVER))
@@ -303,13 +303,13 @@
                 height tx-buff header tx-index tree-depth wproof witness-merkle-root witness-reserved-value ctx cproof )
         result
           (begin
-            (asserts! result ERR_PROOF_FALSE)
-            (asserts! (is-none (map-get? submitted-btc-txs id)) ERR_BTC_TX_ALREADY_USED)
+            ;; (asserts! result ERR_PROOF_FALSE)
+            (asserts! (is-none (map-get? submitted-btc-txs result)) ERR_BTC_TX_ALREADY_USED)
             (match (get out (unwrap! (get-out-value wtx btc-receiver) ERR_NATIVE_FAILURE))
               out (if (>= (get value out) sats)
                 (begin
                       (map-set swaps id (merge swap {done: true}))
-                      (map-set submitted-btc-txs id tx-buff)
+                      (map-set submitted-btc-txs result id)
                       (as-contract (stx-transfer? (get ustx swap) tx-sender (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))))
                 ERR_TX_VALUE_TOO_SMALL)
             ERR_TX_NOT_FOR_RECEIVER))
