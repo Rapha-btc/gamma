@@ -120,7 +120,6 @@
         (let ((swap (unwrap! (map-get? swaps some-id) ERR_INVALID_ID))
               (stx-receiver (default-to tx-sender (get stx-receiver swap))))
           (asserts! (not (get done swap)) ERR_ALREADY_DONE) ;; ability to make a bid even when the swap is reserved
-          (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
           (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender nexus (some 0x707265746D69756D))))
           (ok (map-set swap-offers 
             { stx-receiver: tx-sender, swap-id: (some some-id) }
