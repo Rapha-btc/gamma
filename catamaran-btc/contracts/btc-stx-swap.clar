@@ -144,6 +144,7 @@
         (sats-offer (get sats offer))
         (offer-stx-sender (default-to tx-sender (get stx-sender offer))))
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_SENDER)
+    (asserts! (not (is-eq stx-receiver (get stx-sender swap))) ERR_INVALID_STX_RECEIVER)
     (asserts! (is-eq tx-sender offer-stx-sender) ERR_INVALID_STX_SENDER) ;; important (not redundant and by transitivity...)
     (asserts! (is-eq (get ustx offer) (get ustx swap)) ERR_USTX)
     (asserts! (is-eq sats-offer sats) ERR_SATS) ;; user agrees to sats-offer
