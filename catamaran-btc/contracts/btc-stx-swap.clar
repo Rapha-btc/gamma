@@ -100,6 +100,7 @@
     (asserts! (get ask-priced swap) ERR_NOT_PRICED)
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) 
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
+    (asserts! (not (is-eq tx-sender (get stx-sender swap))) ERR_INVALID_STX_RECEIVER)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
             true) 
