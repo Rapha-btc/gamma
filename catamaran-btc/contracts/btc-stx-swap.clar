@@ -161,7 +161,7 @@
       expired-height: (some (+ burn-block-height expiry)),
       sats: (some sats),
       premium: (some premium), 
-    }))))) ;; do we need to delete all the offers in the map? ;; expiration kicks in
+    }))))) ;; expiration kicks in
 
 (define-public (cancel-bid (offer-swap-id (optional uint)))
   (let ((offer (unwrap! (get-bid tx-sender offer-swap-id) ERR_NO_SUCH_OFFER))
