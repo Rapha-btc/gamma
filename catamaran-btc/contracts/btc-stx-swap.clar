@@ -104,7 +104,7 @@
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
             true) 
     (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))
-    (ok (map-set swaps id (merge swap {stx-receiver: (some tx-sender), when: burn-block-height, expired-height: (some (+ burn-block-height expiry))}))))) ;; expiration kicks in
+    (ok (map-set swaps id (merge swap {stx-receiver: (some tx-sender), expired-height: (some (+ burn-block-height expiry))}))))) ;; expiration kicks in
 
 (define-public (make-bid
   (id (optional uint))
@@ -157,7 +157,6 @@
     (map-delete swap-offers {stx-receiver: stx-receiver, swap-id: offer-swap-id })
     (ok (map-set swaps id (merge swap {
       stx-receiver: (some stx-receiver),
-      when: burn-block-height,
       expired-height: (some (+ burn-block-height expiry)),
       sats: (some sats),
       premium: (some premium), 
