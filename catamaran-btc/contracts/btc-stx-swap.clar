@@ -69,7 +69,7 @@
 
 (define-public (make-ask (id uint) (sats uint) (btc-receiver (buff 40)) (stx-receiver (optional principal)) (premium uint))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID)))
-    (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_RECEIVER)
+    (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_SENDER)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
