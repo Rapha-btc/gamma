@@ -24,6 +24,7 @@
 (define-constant ERR_PROOF_FALSE (err u25))
 (define-constant ERR_RESERVATION_EXPIRED (err u26))
 (define-constant ERR_NOT_RESERVED (err u27))
+(define-constant ERR_SAME_SENDER_RECEIVER (err u28))
 (define-constant ERR_NATIVE_FAILURE (err u99)) ;; this is not necessary?
 (define-constant nexus (as-contract tx-sender))
 (define-constant expiry u100)
@@ -98,9 +99,9 @@
     (premium (unwrap! (get premium swap) ERR_PREMIUM))
     (stx-receiver (default-to tx-sender (get stx-receiver swap))))
     (asserts! (get ask-priced swap) ERR_NOT_PRICED)
+    (asserts! (not (is-eq tx-sender (get stx-sender swap))) ERR_SAME_SENDER_RECEIVER) 
     (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) 
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
-    (asserts! (not (is-eq tx-sender (get stx-sender swap))) ERR_INVALID_STX_RECEIVER)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
             true) 
@@ -145,8 +146,8 @@
         (sats-offer (get sats offer))
         (offer-stx-sender (default-to tx-sender (get stx-sender offer))))
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_SENDER)
-    (asserts! (not (is-eq stx-receiver (get stx-sender swap))) ERR_INVALID_STX_RECEIVER)
     (asserts! (is-eq tx-sender offer-stx-sender) ERR_INVALID_STX_SENDER) ;; important (not redundant and by transitivity...)
+    (asserts! (not (is-eq tx-sender stx-receiver)) ERR_SAME_SENDER_RECEIVER) ;; Corrected: bid taker cannot be bid creator
     (asserts! (is-eq (get ustx offer) (get ustx swap)) ERR_USTX)
     (asserts! (is-eq sats-offer sats) ERR_SATS) ;; user agrees to sats-offer
     (asserts! (is-eq premium-offer premium) ERR_PREMIUM) ;; user agrees to premium offer (not the swap)
