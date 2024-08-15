@@ -25,6 +25,7 @@
 (define-constant ERR_RESERVATION_EXPIRED (err u26))
 (define-constant ERR_NOT_RESERVED (err u27))
 (define-constant ERR_SAME_SENDER_RECEIVER (err u28))
+(define-constant ERR_INVALID_FEE_CONTRACT (err u29))
 (define-constant ERR_NATIVE_FAILURE (err u99)) ;; this is not necessary?
 (define-constant nexus (as-contract tx-sender))
 (define-constant expiry u100)
@@ -59,6 +60,7 @@
 
 (define-public (collateralize-stx (ustx uint) (btc-receiver (optional (buff 40))) (fees <fees-trait>))
   (let ((id (var-get next-id)))
+    (asserts! (is-eq fees .zero) ERR_INVALID_FEE_CONTRACT)
     (asserts! (map-insert swaps id
       {sats: none, btc-receiver: none, ustx: ustx, stx-receiver: none,
         stx-sender: tx-sender, when: burn-block-height, expired-height: none, done: false, premium: none, ask-priced: false, fees: (contract-of fees)}) ERR_INVALID_ID)
@@ -100,13 +102,12 @@
     (stx-receiver (default-to tx-sender (get stx-receiver swap))))
     (asserts! (get ask-priced swap) ERR_NOT_PRICED)
     (asserts! (not (is-eq tx-sender (get stx-sender swap))) ERR_SAME_SENDER_RECEIVER) 
-    (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) 
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
             true) 
     (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))
-    (ok (map-set swaps id (merge swap {stx-receiver: (some tx-sender), expired-height: (some (+ burn-block-height expiry))}))))) ;; expiration kicks in
+    (ok (map-set swaps id (merge swap {stx-receiver: (some tx-sender), expired-height: (some (+ burn-block-height expiry)), when: burn-block-height}))))) ;; expiration kicks in
 
 (define-public (make-bid
   (id (optional uint))
@@ -152,7 +153,6 @@
     (asserts! (is-eq sats-offer sats) ERR_SATS) ;; user agrees to sats-offer
     (asserts! (is-eq premium-offer premium) ERR_PREMIUM) ;; user agrees to premium offer (not the swap)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
-    (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
             true) ;; taking bid forbidden before expiration
@@ -162,7 +162,8 @@
       stx-receiver: (some stx-receiver),
       expired-height: (some (+ burn-block-height expiry)),
       sats: (some sats),
-      premium: (some premium), 
+      premium: (some premium),
+      when: burn-block-height 
     }))))) ;; expiration kicks in
 
 (define-public (cancel-bid (offer-swap-id (optional uint)))
@@ -187,6 +188,7 @@
 (define-public (claim-collateral (id uint) (fees <fees-trait>))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
         (stx-sender (get stx-sender swap)))
+    (asserts! (is-eq fees .zero) ERR_INVALID_FEE_CONTRACT)
     (asserts! (is-eq tx-sender stx-sender) ERR_INVALID_STX_SENDER)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) ;; expired
@@ -220,6 +222,7 @@
               (asserts! false ERR_NOT_RESERVED)) ;; needs to be reserved
       (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
       (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT)
+      (asserts! (is-eq fees .zero) ERR_INVALID_FEE_CONTRACT)
       (asserts! (not (get done swap)) ERR_ALREADY_DONE)
       (try! (contract-call? fees pay-fees (get ustx swap)))
       (match (contract-call? 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-lib-v5 was-tx-mined-compact
@@ -273,6 +276,7 @@
               some-height (asserts! (< burn-block-height some-height) ERR_RESERVATION_EXPIRED) ;; not expired
               (asserts! false ERR_NOT_RESERVED)) ;; needs to be reserved
       (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT)
+      (asserts! (is-eq fees .zero) ERR_INVALID_FEE_CONTRACT)
       (try! (contract-call? fees pay-fees (get ustx swap)))
       (match (contract-call? 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-lib-v5 was-segwit-tx-mined-compact
                 height tx-buff header tx-index tree-depth wproof witness-merkle-root witness-reserved-value ctx cproof )
