@@ -141,7 +141,11 @@
                     (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
                     (if (is-eq stx-call-id (+ (var-get last-token-id) u1))
                     true
-                    (try! (nft-burn? stx-call stx-call-id stx-call-owner))))
+                    (begin
+                    (try! (nft-burn? stx-call stx-call-id stx-call-owner))
+                    (map-set token-count
+                        stx-call-owner
+                        (- (get-balance stx-call-owner) u1))))) ;; burn and decrement head ache here?
         true) ;; taking bid forbidden before expiration
     (asserts! (is-eq tx-sender stx-call-owner) ERR_INVALID_STX_RECEIVER)
     (if (is-eq stx-call-id (+ (var-get last-token-id) u1))
@@ -206,7 +210,11 @@
                         (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
                         (if (is-eq stx-call-id (+ (var-get last-token-id) u1))
                         true
-                        (try! (nft-burn? stx-call stx-call-id stx-call-owner))))
+                        (begin
+                        (try! (nft-burn? stx-call stx-call-id stx-call-owner))
+                        (map-set token-count
+                            stx-call-owner
+                            (- (get-balance stx-call-owner) u1))))) ;; burn and decrement head ache here?
             true) ;; taking bid forbidden before expiration
     (and (> premium u0) (try! (as-contract (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))) ;; nexus releases premium
     (map-delete swap-offers {stx-receiver: stx-receiver, swap-id: offer-swap-id })
@@ -255,7 +263,11 @@
     (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT)
     (try! (contract-call? fees release-fees (get ustx swap)))
     (match stx-call-id
-      some-id (try! (nft-burn? stx-call some-id tx-sender))
+      some-id (begin
+                    (try! (nft-burn? stx-call some-id tx-sender))
+                    (map-set token-count
+                        tx-sender
+                        (- (get-balance tx-sender) u1))) ;; burn and decrement head ache here?  
       true)
     (try! (as-contract (stx-transfer? (get ustx swap) tx-sender stx-sender)))
     (ok (map-set swaps id (merge swap {done: true}))))
@@ -301,6 +313,9 @@
               out (if (>= (get value out) sats)
                 (begin
                       (try! (nft-burn? stx-call stx-call-id tx-sender))
+                      (map-set token-count
+                            tx-sender
+                            (- (get-balance tx-sender) u1))
                       (map-set swaps id (merge swap {done: true}))
                       (map-set submitted-btc-txs result id)
                       (as-contract (stx-transfer? (get ustx swap) tx-sender stx-call-owner)))
@@ -350,8 +365,7 @@
             (asserts! (is-none (map-get? submitted-btc-txs result)) ERR_BTC_TX_ALREADY_USED)
             (match (get out (unwrap! (get-out-value wtx btc-receiver) ERR_NATIVE_FAILURE))
               out (if (>= (get value out) sats)
-                (begin
-                      (try! (nft-burn? stx-call stx-call-id tx-sender))
+                (let ((burn-nft (burn-and-decrement tx-sender stx-call-id)))
                       (map-set swaps id (merge swap {done: true}))
                       (map-set submitted-btc-txs result id)
                       (as-contract (stx-transfer? (get ustx swap) tx-sender stx-call-owner)))
@@ -444,4 +458,13 @@
     (map-set token-count
              recipient
              (+ (get-balance recipient) u1))
+    (ok true)))
+
+;; Burn NFT and decrement token count
+(define-private (burn-and-decrement (owner principal) (id uint))
+  (begin
+    (try! (nft-burn? stx-call id owner))
+    (map-set token-count
+             owner
+             (- (get-balance owner) u1))
     (ok true)))
