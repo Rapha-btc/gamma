@@ -26,17 +26,33 @@
 (define-constant ERR_NOT_RESERVED (err u27))
 (define-constant ERR_SAME_SENDER_RECEIVER (err u28))
 (define-constant ERR_INVALID_FEE_CONTRACT (err u29))
+(define-constant ERR_NOT_NFT_OWNER (err u30))
 (define-constant ERR_NATIVE_FAILURE (err u99)) ;; this is not necessary?
 (define-constant nexus (as-contract tx-sender))
 (define-constant expiry u100)
 (define-constant cooldown u6)
 
-(define-map swaps uint {sats: (optional uint), btc-receiver: (optional (buff 40)), stx-sender: principal, ustx: uint, stx-receiver: (optional principal), when: uint, expired-height: (optional uint), done: bool, premium: (optional uint), ask-priced: bool, fees: principal})
+(define-non-fungible-token stx-call uint)
+
+(define-map swaps uint 
+    {sats: (optional uint), 
+    btc-receiver: (optional (buff 40)), 
+    stx-sender: principal, 
+    ustx: uint, 
+    stx-call: (optional uint), 
+    when: uint, 
+    expired-height: (optional uint), 
+    done: bool, 
+    premium: (optional uint), 
+    ask-priced: bool, 
+    fees: principal})
+
 (define-map swap-offers {stx-receiver: principal, swap-id: (optional uint)} ;; allows a stx-receiver to do an offer per swap-id and 1 without swap-id
   {stx-sender: (optional principal), ustx: uint, sats: uint, premium: uint})
 (define-map submitted-btc-txs (buff 128) uint)  ;; map between accepted btc txs and swap ids
 
 (define-data-var next-id uint u0)
+(define-data-var last-token-id uint u0)
 
 (define-read-only (read-uint32 (ctx { txbuff: (buff 4096), index: uint}))
 		(let ((data (get txbuff ctx))
@@ -49,6 +65,21 @@
     (merge result {out: (some {scriptPubKey: (get scriptPubKey entry), value: (get uint32 (unwrap-panic (read-uint32 {txbuff: (get value entry), index: u0})))})})
     result))
 
+;; SIP009 NFT Functions
+(define-read-only (get-last-token-id)
+  (ok (var-get last-token-id)))
+
+(define-read-only (get-token-uri (token-id uint))
+  (ok none))
+
+(define-read-only (get-owner (token-id uint))
+  (ok (nft-get-owner? stx-call token-id)))
+
+(define-public (transfer (id uint) (sender principal) (recipient principal))
+  (begin
+    (asserts! (is-eq tx-sender sender) ERR_NOT_NFT_OWNER)
+    (nft-transfer? stx-call id sender recipient)))
+
 (define-public (get-out-value (tx {
     version: (buff 4),
     ins: (list 8
@@ -60,9 +91,9 @@
 
 (define-public (collateralize-stx (ustx uint) (btc-receiver (optional (buff 40))) (fees <fees-trait>))
   (let ((id (var-get next-id)))
-    (asserts! (is-eq fees .zero) ERR_INVALID_FEE_CONTRACT)
+    (asserts! (is-eq fees .fees) ERR_INVALID_FEE_CONTRACT)
     (asserts! (map-insert swaps id
-      {sats: none, btc-receiver: none, ustx: ustx, stx-receiver: none,
+      {sats: none, btc-receiver: none, ustx: ustx, stx-call: none,
         stx-sender: tx-sender, when: burn-block-height, expired-height: none, done: false, premium: none, ask-priced: false, fees: (contract-of fees)}) ERR_INVALID_ID)
     (var-set next-id (+ id u1))
     (try! (contract-call? fees hold-fees ustx)) ;; memo?
@@ -77,10 +108,17 @@
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
             true) ;; no cool down so make sure ulterior func cool down
+    (match stx-receiver
+      some-owner 
+        (let ((new-nft-id (+ (var-get last-token-id) u1)))
+          (try! (nft-mint? stx-call new-nft-id some-owner))
+          (var-set last-token-id new-nft-id)
+          (map-set swaps id (merge swap {stx-call: (some new-nft-id)}))
+          )
+        true) ;; we do nothing if there is no designated stx-receiver
     (ok (map-set swaps id (merge swap {
       sats: (some sats), 
       btc-receiver: (some btc-receiver), 
-      stx-receiver: stx-receiver,
       premium: (some premium), 
       ask-priced: true})))))
 
@@ -96,19 +134,34 @@
     (try! (make-ask swap-id sats btc-receiver stx-receiver premium))
     (ok swap-id)))
 
-(define-public (take-ask (id uint)) ;; BTC sender accepts the initial offer of STX sender
-  (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-    (premium (unwrap! (get premium swap) ERR_PREMIUM))
-    (stx-receiver (default-to tx-sender (get stx-receiver swap))))
-    (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
+(define-public (take-ask (id uint))
+  (let 
+    ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
+     (premium (unwrap! (get premium swap) ERR_PREMIUM))
+     (stx-call-id (default-to (+ (var-get last-token-id) u1) (get stx-call swap)))
+     (stx-call-owner (default-to tx-sender (nft-get-owner? stx-call stx-call-id))))
     (asserts! (get ask-priced swap) ERR_NOT_PRICED)
     (asserts! (not (is-eq tx-sender (get stx-sender swap))) ERR_SAME_SENDER_RECEIVER) 
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (match (get expired-height swap)
-            some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
-            true) 
-    (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))
-    (ok (map-set swaps id (merge swap {stx-receiver: (some tx-sender), expired-height: (some (+ burn-block-height expiry)), when: burn-block-height}))))) ;; expiration kicks in
+        some-height (begin 
+                    (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
+                    (if (is-eq stx-call-id (+ (var-get last-token-id) u1))
+                    true
+                    (try! (nft-burn? stx-call stx-call-id stx-call-owner))))
+        true) ;; taking bid forbidden before expiration
+    (asserts! (is-eq tx-sender stx-call-owner) ERR_INVALID_STX_RECEIVER)
+    (if (is-eq stx-call-id (+ (var-get last-token-id) u1))
+        (begin
+          (try! (nft-mint? stx-call stx-call-id tx-sender))
+          (var-set last-token-id stx-call-id))
+        true) ;; If it's an existing NFT, we don't need to mint 
+    (and (> premium u0) 
+        (try! (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))
+    (ok (map-set swaps id (merge swap 
+          {stx-call: (some stx-call-id), 
+           expired-height: (some (+ burn-block-height expiry)), 
+           when: burn-block-height})))))
 
 (define-public (make-bid
   (id (optional uint))
@@ -145,7 +198,9 @@
         (offer (unwrap! (get-bid stx-receiver offer-swap-id) ERR_NO_SUCH_OFFER))
         (premium-offer (get premium offer))
         (sats-offer (get sats offer))
-        (offer-stx-sender (default-to tx-sender (get stx-sender offer))))
+        (offer-stx-sender (default-to tx-sender (get stx-sender offer)))
+        (stx-call-id (default-to (+ (var-get last-token-id) u1) (get stx-call swap)))
+        (stx-call-owner (default-to tx-sender (nft-get-owner? stx-call stx-call-id))))
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_SENDER)
     (asserts! (is-eq tx-sender offer-stx-sender) ERR_INVALID_STX_SENDER) ;; important (not redundant and by transitivity...)
     (asserts! (not (is-eq tx-sender stx-receiver)) ERR_SAME_SENDER_RECEIVER) ;; Corrected: bid taker cannot be bid creator
@@ -154,12 +209,21 @@
     (asserts! (is-eq premium-offer premium) ERR_PREMIUM) ;; user agrees to premium offer (not the swap)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (match (get expired-height swap)
-            some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
+            some-height (begin 
+                        (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
+                        (if (is-eq stx-call-id (+ (var-get last-token-id) u1))
+                        true
+                        (try! (nft-burn? stx-call stx-call-id stx-call-owner))))
             true) ;; taking bid forbidden before expiration
     (and (> premium u0) (try! (as-contract (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))) ;; nexus releases premium
     (map-delete swap-offers {stx-receiver: stx-receiver, swap-id: offer-swap-id })
+    (if (is-eq stx-call-id (+ (var-get last-token-id) u1))
+      (begin
+        (try! (nft-mint? stx-call stx-call-id stx-call-owner))
+        (var-set last-token-id stx-call-id))
+      true) ;; If it's an existing NFT, we don't need to mint
     (ok (map-set swaps id (merge swap {
-      stx-receiver: (some stx-receiver),
+      stx-call: (some stx-call-id),
       expired-height: (some (+ burn-block-height expiry)),
       sats: (some sats),
       premium: (some premium),
@@ -187,8 +251,9 @@
 
 (define-public (claim-collateral (id uint) (fees <fees-trait>))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-        (stx-sender (get stx-sender swap)))
-    (asserts! (is-eq fees .zero) ERR_INVALID_FEE_CONTRACT)
+        (stx-sender (get stx-sender swap))
+        (stx-call-id (get stx-call swap)))
+    (asserts! (is-eq fees .fees) ERR_INVALID_FEE_CONTRACT)
     (asserts! (is-eq tx-sender stx-sender) ERR_INVALID_STX_SENDER)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) ;; expired
@@ -196,6 +261,9 @@
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT)
     (try! (contract-call? fees release-fees (get ustx swap)))
+    (match stx-call-id
+      some-id (try! (nft-burn? stx-call some-id tx-sender))
+      true)
     (try! (as-contract (stx-transfer? (get ustx swap) tx-sender stx-sender)))
     (ok (map-set swaps id (merge swap {done: true}))))
 )
@@ -214,15 +282,16 @@
     (fees <fees-trait>)) ;; any user can submit a tx that contains the swap
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
         (tx-buff (contract-call? 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-helper concat-tx tx))
-        (stx-receiver (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))
+        (stx-call-id (unwrap! (get stx-call swap) ERR_NO_STX_RECEIVER))
+        (stx-call-owner (unwrap! (nft-get-owner? stx-call stx-call-id) ERR_NOT_NFT_OWNER))
         (btc-receiver (unwrap! (get btc-receiver swap) ERR_NO_BTC_RECEIVER)))
       (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
       (match (get expired-height swap)
               some-height (asserts! (< burn-block-height some-height) ERR_RESERVATION_EXPIRED) ;; not expired
               (asserts! false ERR_NOT_RESERVED)) ;; needs to be reserved
-      (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
+      (asserts! (is-eq tx-sender stx-call-owner) ERR_INVALID_STX_RECEIVER)
       (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT)
-      (asserts! (is-eq fees .zero) ERR_INVALID_FEE_CONTRACT)
+      (asserts! (is-eq fees .fees) ERR_INVALID_FEE_CONTRACT)
       (asserts! (not (get done swap)) ERR_ALREADY_DONE)
       (try! (contract-call? fees pay-fees (get ustx swap)))
       (match (contract-call? 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-lib-v5 was-tx-mined-compact
@@ -238,9 +307,10 @@
             (match (get out (unwrap! (get-out-value tx btc-receiver) ERR_NATIVE_FAILURE))
               out (if (>= (get value out) sats)
                 (begin
+                      (try! (nft-burn? stx-call stx-call-id tx-sender))
                       (map-set swaps id (merge swap {done: true}))
                       (map-set submitted-btc-txs result id)
-                      (as-contract (stx-transfer? (get ustx swap) tx-sender (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))))
+                      (as-contract (stx-transfer? (get ustx swap) tx-sender stx-call-owner)))
                 ERR_TX_VALUE_TOO_SMALL)
             ERR_TX_NOT_FOR_RECEIVER))
         error (err (* error u1000)))))
@@ -265,18 +335,19 @@
     (cproof (list 14 (buff 32)))
     (fees <fees-trait>))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-        (stx-receiver (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))
+        (stx-call-id (unwrap! (get stx-call swap) ERR_NO_STX_RECEIVER))
+        (stx-call-owner (unwrap! (nft-get-owner? stx-call stx-call-id) ERR_NOT_NFT_OWNER))
         (btc-receiver (unwrap! (get btc-receiver swap) ERR_NO_BTC_RECEIVER))
         (sats (unwrap! (get sats swap) ERR_NOT_PRICED))
         (tx-buff (contract-call? .clarity-bitcoin-helper-wtx concat-wtx wtx witness-data)))
       (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) 
-      (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
+      (asserts! (is-eq tx-sender stx-call-owner) ERR_INVALID_STX_RECEIVER)
       (asserts! (not (get done swap)) ERR_ALREADY_DONE)
       (match (get expired-height swap)
               some-height (asserts! (< burn-block-height some-height) ERR_RESERVATION_EXPIRED) ;; not expired
               (asserts! false ERR_NOT_RESERVED)) ;; needs to be reserved
       (asserts! (is-eq (contract-of fees) (get fees swap)) ERR_INVALID_FEES_TRAIT)
-      (asserts! (is-eq fees .zero) ERR_INVALID_FEE_CONTRACT)
+      (asserts! (is-eq fees .fees) ERR_INVALID_FEE_CONTRACT)
       (try! (contract-call? fees pay-fees (get ustx swap)))
       (match (contract-call? 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-lib-v5 was-segwit-tx-mined-compact
                 height tx-buff header tx-index tree-depth wproof witness-merkle-root witness-reserved-value ctx cproof )
@@ -287,9 +358,10 @@
             (match (get out (unwrap! (get-out-value wtx btc-receiver) ERR_NATIVE_FAILURE))
               out (if (>= (get value out) sats)
                 (begin
+                      (try! (nft-burn? stx-call stx-call-id tx-sender))
                       (map-set swaps id (merge swap {done: true}))
                       (map-set submitted-btc-txs result id)
-                      (as-contract (stx-transfer? (get ustx swap) tx-sender (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))))
+                      (as-contract (stx-transfer? (get ustx swap) tx-sender stx-call-owner)))
                 ERR_TX_VALUE_TOO_SMALL)
             ERR_TX_NOT_FOR_RECEIVER))
         error (err (* error u1000)))))
@@ -301,3 +373,5 @@
 
 (define-read-only (get-bid (stx-receiver principal) (id (optional uint)))
   (map-get? swap-offers {stx-receiver: stx-receiver, swap-id: id}))
+
+(print "The fight is won or lost far away from witnesses: behind the lines, in the gym, and out there on the road, long before I dance under those lights.")

@@ -19,8 +19,14 @@ contract_id = 'SP3DX3H4FEYZJZ586MFBS25ZW3HZDMEW92260R2PR.Wrapped-Bitcoin'
 
 [[project.requirements]]
 contract_id = 'SP2C2YFP12AJZB4MABJBAJ55XECVS7E4PMMZ89YZR.usda-token'
+
 [contracts.btc-stx-swap]
 path = 'contracts/btc-stx-swap.clar'
+clarity_version = 2
+epoch = 2.5
+
+[contracts.btc-stx-option]
+path = 'contracts/btc-stx-option.clar'
 clarity_version = 2
 epoch = 2.5
 
@@ -31,6 +37,11 @@ epoch = 2.5
 
 [contracts.fees]
 path = 'contracts/fees.clar'
+clarity_version = 2
+epoch = 2.5
+
+[contracts.zero]
+path = 'contracts/zero.clar'
 clarity_version = 2
 epoch = 2.5
 

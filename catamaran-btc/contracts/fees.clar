@@ -7,10 +7,10 @@
 
 (define-private (jump-fee (ustx uint))
   (if (> ustx u37500000000) ;; $75k+ (Whales)
-    (/ ustx u133)           ;; 0.75% fee
+    (/ ustx u200)           ;; 0.5% fee
     (if (> ustx u12500000000) ;; $25k-$75k
-      (/ ustx u80)            ;; 1.25% fee
-      (/ ustx u40))))         ;; $0-$25k: 2.5% fee
+      (/ ustx u133)            ;; 0.75% fee
+      (/ ustx u100))))         ;; $0-$25k: 1% fee
 
 ;; Hold fees for the given amount in escrow.
 (define-public (hold-fees (ustx uint))
