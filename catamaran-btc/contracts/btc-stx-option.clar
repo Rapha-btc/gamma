@@ -28,9 +28,17 @@
 (define-constant ERR_INVALID_FEE_CONTRACT (err u29))
 (define-constant ERR_NOT_NFT_OWNER (err u30))
 (define-constant ERR_NATIVE_FAILURE (err u99)) ;; this is not necessary?
+(define-constant ERR-NOT-AUTHORIZED (err u401))
+(define-constant ERR-NOT-FOUND (err u404))
+(define-constant ERR-LISTING (err u507))
+
 (define-constant nexus (as-contract tx-sender))
 (define-constant expiry u100)
 (define-constant cooldown u6)
+
+;; NFTs: stx-calls 
+(define-map token-count principal uint)
+(define-map market uint {price: uint, commission: principal})
 
 (define-non-fungible-token stx-call uint)
 
@@ -65,21 +73,6 @@
     (merge result {out: (some {scriptPubKey: (get scriptPubKey entry), value: (get uint32 (unwrap-panic (read-uint32 {txbuff: (get value entry), index: u0})))})})
     result))
 
-;; SIP009 NFT Functions
-(define-read-only (get-last-token-id)
-  (ok (var-get last-token-id)))
-
-(define-read-only (get-token-uri (token-id uint))
-  (ok none))
-
-(define-read-only (get-owner (token-id uint))
-  (ok (nft-get-owner? stx-call token-id)))
-
-(define-public (transfer (id uint) (sender principal) (recipient principal))
-  (begin
-    (asserts! (is-eq tx-sender sender) ERR_NOT_NFT_OWNER)
-    (nft-transfer? stx-call id sender recipient)))
-
 (define-public (get-out-value (tx {
     version: (buff 4),
     ins: (list 8
@@ -110,8 +103,8 @@
             true) ;; no cool down so make sure ulterior func cool down
     (match stx-receiver
       some-owner 
-        (let ((new-nft-id (+ (var-get last-token-id) u1)))
-          (try! (nft-mint? stx-call new-nft-id some-owner))
+        (let ((new-nft-id (+ (var-get last-token-id) u1))
+             (mint (mint-and-increment some-owner new-nft-id)))
           (var-set last-token-id new-nft-id)
           (map-set swaps id (merge swap {stx-call: (some new-nft-id)}))
           )
@@ -152,8 +145,8 @@
         true) ;; taking bid forbidden before expiration
     (asserts! (is-eq tx-sender stx-call-owner) ERR_INVALID_STX_RECEIVER)
     (if (is-eq stx-call-id (+ (var-get last-token-id) u1))
-        (begin
-          (try! (nft-mint? stx-call stx-call-id tx-sender))
+        (let
+            ((mint (mint-and-increment tx-sender stx-call-id))) 
           (var-set last-token-id stx-call-id))
         true) ;; If it's an existing NFT, we don't need to mint 
     (and (> premium u0) 
@@ -218,8 +211,8 @@
     (and (> premium u0) (try! (as-contract (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))) ;; nexus releases premium
     (map-delete swap-offers {stx-receiver: stx-receiver, swap-id: offer-swap-id })
     (if (is-eq stx-call-id (+ (var-get last-token-id) u1))
-      (begin
-        (try! (nft-mint? stx-call stx-call-id stx-call-owner))
+      (let (
+        (mint (mint-and-increment stx-call-owner stx-call-id)))
         (var-set last-token-id stx-call-id))
       true) ;; If it's an existing NFT, we don't need to mint
     (ok (map-set swaps id (merge swap {
@@ -374,4 +367,81 @@
 (define-read-only (get-bid (stx-receiver principal) (id (optional uint)))
   (map-get? swap-offers {stx-receiver: stx-receiver, swap-id: id}))
 
-(print "The fight is won or lost far away from witnesses: behind the lines, in the gym, and out there on the road, long before I dance under those lights.")
+;; SIP009 NFT Functions
+(define-read-only (get-last-token-id)
+  (ok (var-get last-token-id)))
+
+(define-read-only (get-token-uri (token-id uint))
+  (ok none))
+
+(define-read-only (get-owner (token-id uint))
+  (ok (nft-get-owner? stx-call token-id)))
+
+;; Get balance of NFTs for an account
+(define-read-only (get-balance (account principal))
+  (default-to u0
+    (map-get? token-count account)))
+
+;; Check if sender is the owner of the NFT
+(define-private (is-sender-owner (id uint))
+  (let ((owner (unwrap! (nft-get-owner? stx-call id) false)))
+     (is-eq tx-sender owner)))
+
+;; Get listing in STX
+(define-read-only (get-listing-in-ustx (id uint))
+  (map-get? market id))
+
+;; List NFT for sale
+(define-public (list-in-ustx (id uint) (price uint) (commission principal))
+  (let ((listing  {price: price, commission: commission}))
+    (asserts! (is-sender-owner id) ERR-NOT-AUTHORIZED)
+    (map-set market id listing)
+    (print (merge listing {a: "list-in-ustx", id: id}))
+    (ok true)))
+
+;; Unlist NFT from sale
+(define-public (unlist-in-ustx (id uint))
+  (begin
+    (asserts! (is-sender-owner id) ERR-NOT-AUTHORIZED)
+    (map-delete market id)
+    (print {a: "unlist-in-ustx", id: id})
+    (ok true)))
+
+;; Buy listed NFT
+(define-public (buy-in-ustx (id uint))
+  (let ((owner (unwrap! (nft-get-owner? stx-call id) ERR-NOT-FOUND))
+        (listing (unwrap! (map-get? market id) ERR-LISTING))
+        (price (get price listing)))
+    (try! (stx-transfer? price tx-sender owner))
+    (try! (transfer id owner tx-sender))
+    (map-delete market id)
+    (print {a: "buy-in-ustx", id: id})
+    (ok true)))
+
+;; Update the transfer function to manage token counts
+(define-public (transfer (id uint) (sender principal) (recipient principal))
+  (begin
+    (asserts! (is-eq tx-sender sender) ERR-NOT-AUTHORIZED)
+    (asserts! (is-none (map-get? market id)) ERR-LISTING)
+    (match (nft-transfer? stx-call id sender recipient)
+      success
+        (let
+          ((sender-balance (get-balance sender))
+           (recipient-balance (get-balance recipient)))
+            (map-set token-count
+                  sender
+                  (- sender-balance u1))
+            (map-set token-count
+                  recipient
+                  (+ recipient-balance u1))
+            (ok success))
+      error (err error))))
+
+;; Update mint functions to increment token count
+(define-private (mint-and-increment (recipient principal) (id uint))
+  (begin
+    (try! (nft-mint? stx-call id recipient))
+    (map-set token-count
+             recipient
+             (+ (get-balance recipient) u1))
+    (ok true)))
