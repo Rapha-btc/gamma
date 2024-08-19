@@ -114,6 +114,22 @@
   (let 
     ((swap-id (try! (collateralize-stx ustx (some btc-receiver)))))
     (try! (make-ask swap-id sats btc-receiver stx-receiver premium))
+    (print   
+      {
+        type: "collateralize-and-make-ask",
+        id: swap-id,
+        ustx: ustx,
+        stxSender: tx-sender,
+        done: false,
+        when: burn-block-height,
+        fees: "zero",
+        sats: (some sats),
+        btcReceiver: (some btc-receiver),
+        stxReceiver: stx-receiver,
+        premium: (some premium),
+        askPriced: true,
+      }
+    )
     (ok swap-id)))
 
 (define-public (take-ask (id uint)) ;; BTC sender accepts the initial offer of STX sender
