@@ -1,5 +1,3 @@
-;; (use-trait fees-trait .fees-trait.fees-trait) ;; the fee structure is defined by the calling client
-
 (define-constant ERR-OUT-OF-BOUNDS u4) ;; (err u1) -- sender does not have enough balance to transfer (err u2) -- sender and recipient are the same principal (err u3) -- amount to send is non-positive
 (define-constant ERR_TX_VALUE_TOO_SMALL (err u5))
 (define-constant ERR_TX_NOT_FOR_RECEIVER (err u6))
@@ -16,7 +14,8 @@
 (define-constant ERR_NO_SUCH_OFFER (err u17))
 (define-constant ERR_USTX (err u18))
 (define-constant ERR_SATS (err u19))
-(define-constant ERR_PREMIUM (err u20))
+(define-constant ERR_PENALTY (err u20))
+(define-constant ERR_NO_PENALTY (err u21))
 (define-constant ERR_INVALID_STX_RECEIVER (err u22))
 (define-constant ERR_OFFER_ALREADY_EXISTS (err u23)) ;; one offer at a time
 (define-constant ERR_INVALID_OFFER (err u24))
@@ -26,12 +25,13 @@
 (define-constant ERR_SAME_SENDER_RECEIVER (err u28))
 (define-constant ERR_NATIVE_FAILURE (err u99)) ;; this is not necessary?
 (define-constant nexus (as-contract tx-sender))
-(define-constant expiry u100)
+(define-constant expiry u14)
 (define-constant cooldown u6)
+(define-constant penalty-rate u3)
 
-(define-map swaps uint {sats: (optional uint), btc-receiver: (optional (buff 40)), stx-sender: principal, ustx: uint, stx-receiver: (optional principal), when: uint, expired-height: (optional uint), done: bool, premium: (optional uint), ask-priced: bool})
+(define-map swaps uint {sats: (optional uint), btc-receiver: (optional (buff 40)), stx-sender: principal, ustx: uint, stx-receiver: (optional principal), when: uint, expired-height: (optional uint), done: bool, total-penalty: (optional uint), ask-priced: bool})
 (define-map swap-offers {stx-receiver: principal, swap-id: (optional uint)} ;; allows a stx-receiver to do an offer per swap-id and 1 without swap-id
-  {stx-sender: (optional principal), ustx: uint, sats: uint, premium: uint})
+  {stx-sender: (optional principal), ustx: uint, sats: uint, penalty: uint})
 (define-map submitted-btc-txs (buff 128) uint)  ;; map between accepted btc txs and swap ids
 
 (define-data-var next-id uint u0)
@@ -58,87 +58,160 @@
 
 (define-public (collateralize-stx (ustx uint) (btc-receiver (optional (buff 40))))
   (let ((id (var-get next-id)))
+    (print 
+      {
+        type: "collateralize-stx",
+        id: id,
+        ustx: ustx,
+        stxSender: tx-sender,
+        btcReceiver: btc-receiver,
+        done: false,
+        askPriced: false,
+        sats: none,
+        total-penalty: none,
+        stxReceiver: none,
+        when: burn-block-height,
+        fees: "zero",
+      }
+    )
     (asserts! (map-insert swaps id
       {sats: none, btc-receiver: btc-receiver, ustx: ustx, stx-receiver: none,
-        stx-sender: tx-sender, when: burn-block-height, expired-height: none, done: false, premium: none, ask-priced: false}) ERR_INVALID_ID)
+        stx-sender: tx-sender, when: burn-block-height, expired-height: none, done: false, total-penalty: none, ask-priced: false}) ERR_INVALID_ID)
     (var-set next-id (+ id u1))
     (match (stx-transfer? ustx tx-sender (as-contract tx-sender)) ;; memo?
       success (ok id)
       error (err (* error u1000)))))
 
-(define-public (make-ask (id uint) (sats uint) (btc-receiver (buff 40)) (stx-receiver (optional principal)) (premium uint))
+(define-public (make-ask (id uint) (sats uint) (btc-receiver (buff 40)) (stx-receiver (optional principal)))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID)))
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_SENDER)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
             true) ;; no cool down so make sure ulterior func cool down
+    (print 
+      {
+        type: "make-ask",
+        id: id,
+        sats: (some sats),
+        btcReceiver: (some btc-receiver),
+        stxReceiver: stx-receiver,
+        askPriced: true,
+      }
+    )
     (ok (map-set swaps id (merge swap {
       sats: (some sats), 
       btc-receiver: (some btc-receiver), 
       stx-receiver: stx-receiver,
-      premium: (some premium), 
       ask-priced: true})))))
 
 (define-public (collateralize-and-make-ask
   (ustx uint) 
   (btc-receiver (buff 40)) 
   (sats uint)
-  (stx-receiver (optional principal))
-  (premium uint))
+  (stx-receiver (optional principal)))
   (let 
     ((swap-id (try! (collateralize-stx ustx (some btc-receiver)))))
-    (try! (make-ask swap-id sats btc-receiver stx-receiver premium))
+    (try! (make-ask swap-id sats btc-receiver stx-receiver))
+    (print   
+      {
+        type: "collateralize-and-make-ask",
+        id: swap-id,
+        ustx: ustx,
+        stxSender: tx-sender,
+        done: false,
+        when: burn-block-height,
+        fees: "zero",
+        sats: (some sats),
+        btcReceiver: (some btc-receiver),
+        stxReceiver: stx-receiver,
+        total-penalty: none,
+        askPriced: true,
+      }
+    )
     (ok swap-id)))
 
 (define-public (take-ask (id uint)) ;; BTC sender accepts the initial offer of STX sender
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-    (premium (unwrap! (get premium swap) ERR_PREMIUM))
-    (stx-receiver (default-to tx-sender (get stx-receiver swap))))
+    (stx-receiver (default-to tx-sender (get stx-receiver swap)))
+    (new-penalty (some (+ (* penalty-rate (get ustx swap)) (default-to u0 (get total-penalty swap))))))
     (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
     (asserts! (get ask-priced swap) ERR_NOT_PRICED)
     (asserts! (not (is-eq tx-sender (get stx-sender swap))) ERR_SAME_SENDER_RECEIVER) 
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
-            true) 
-    (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))
-    (ok (map-set swaps id (merge swap {stx-receiver: (some tx-sender), expired-height: (some (+ burn-block-height expiry)), when: burn-block-height}))))) ;; expiration kicks in
+            true)
+    (print 
+      {
+        type: "take-ask",
+        id: id,
+        stxReceiver: (some tx-sender),
+        expiredHeight: (some (+ burn-block-height expiry)),
+        when: burn-block-height,
+        total-penalty: new-penalty,
+      }
+    )
+    (try! (stx-transfer-memo? (* penalty-rate (get ustx swap)) tx-sender nexus 0x707265746D69756D)) ;; hold penalty
+    (ok (map-set swaps id (merge swap {stx-receiver: (some tx-sender), expired-height: (some (+ burn-block-height expiry)), when: burn-block-height, total-penalty: new-penalty}))))) ;; expiration kicks in
 
 (define-public (make-bid
   (id (optional uint))
   (stx-sender (optional principal))
   (ustx (optional uint))
-  (sats uint)
-  (premium uint)) ;; allowing the BTC sender to initiate swap offers - without a swap-id
+  (sats uint)) ;; allowing the BTC sender to initiate swap offers - without a swap-id
   (begin
     (asserts! (is-none (get-bid tx-sender id)) ERR_OFFER_ALREADY_EXISTS)
     (asserts! (> sats u0) ERR_INVALID_OFFER)
     (match id
       some-id 
-        (let ((swap (unwrap! (map-get? swaps some-id) ERR_INVALID_ID)))
+        (let ((swap (unwrap! (map-get? swaps some-id) ERR_INVALID_ID))
+              (swap-ustx  (get ustx swap)))
           (asserts! (not (get done swap)) ERR_ALREADY_DONE) ;; ability to make a bid even when the swap is reserved
-          (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender nexus (some 0x707265746D69756D))))
+          (try! (stx-transfer-memo? (* penalty-rate swap-ustx) tx-sender nexus 0x707265746D69756D)) ;; hold penalty
+          (print 
+            {
+              type: "make-bid",
+              id: id,
+              stxReceiver: tx-sender,
+              stxSender: stx-sender,
+              ustx: swap-ustx,
+              sats: sats,
+              penalty: (* penalty-rate (get ustx swap)), ;; update bids backend
+            }
+          )
           (ok (map-set swap-offers 
             { stx-receiver: tx-sender, swap-id: (some some-id) }
             { stx-sender: (some (get stx-sender swap)),
-              ustx: (get ustx swap),
-              sats: sats,
-              premium: premium })))
+              ustx: swap-ustx,
+              sats: sats ,
+              penalty: (* penalty-rate (get ustx swap)),
+            })))
       (begin
         (asserts! (and (is-some ustx) (> (unwrap-panic ustx) u0)) ERR_INVALID_OFFER)
-        (and (> premium u0) (try! (contract-call? .usda-token transfer premium tx-sender nexus (some 0x707265746D69756D))))
+        (try! (stx-transfer-memo? (* penalty-rate (unwrap-panic ustx)) tx-sender nexus 0x707265746D69756D)) ;; hold penalty
+        (print 
+          {
+            type: "make-bid",
+            id: none,
+            stxReceiver: tx-sender,
+            stxSender: stx-sender,
+            ustx: (unwrap-panic ustx),
+            sats: sats,
+            penalty: (* penalty-rate (unwrap-panic ustx)),
+          }
+        )
         (ok (map-set swap-offers 
           { stx-receiver: tx-sender, swap-id: none }
           { stx-sender: stx-sender,
             ustx: (unwrap-panic ustx),
             sats: sats,
-            premium: premium }))))))
+            penalty: (* penalty-rate (unwrap-panic ustx))}))))))
 
-(define-public (take-bid (id uint) (offer-swap-id (optional uint)) (sats uint) (premium uint) (stx-receiver principal))
+(define-public (take-bid (id uint) (offer-swap-id (optional uint)) (sats uint) (stx-receiver principal))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
         (offer (unwrap! (get-bid stx-receiver offer-swap-id) ERR_NO_SUCH_OFFER))
-        (premium-offer (get premium offer))
+        (penalty-offer (get penalty offer))
         (sats-offer (get sats offer))
         (offer-stx-sender (default-to tx-sender (get stx-sender offer))))
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_SENDER)
@@ -146,27 +219,43 @@
     (asserts! (not (is-eq tx-sender stx-receiver)) ERR_SAME_SENDER_RECEIVER) ;; Corrected: bid taker cannot be bid creator
     (asserts! (is-eq (get ustx offer) (get ustx swap)) ERR_USTX)
     (asserts! (is-eq sats-offer sats) ERR_SATS) ;; user agrees to sats-offer
-    (asserts! (is-eq premium-offer premium) ERR_PREMIUM) ;; user agrees to premium offer (not the swap)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
             true) ;; taking bid forbidden before expiration
-    (and (> premium u0) (try! (as-contract (contract-call? .usda-token transfer premium tx-sender (get stx-sender swap) (some 0x707265746D69756D))))) ;; nexus releases premium
     (map-delete swap-offers {stx-receiver: stx-receiver, swap-id: offer-swap-id })
+    (print 
+      {
+        type: "take-bid",
+        id: id,
+        stxReceiver: (some stx-receiver),
+        expiredHeight: (some (+ burn-block-height expiry)),
+        sats: (some sats),
+        total-penalty: (some (+ penalty-offer (default-to u0 (get total-penalty swap)))),
+        when: burn-block-height,
+      } ;; update swap
+    )
     (ok (map-set swaps id (merge swap {
       stx-receiver: (some stx-receiver),
       expired-height: (some (+ burn-block-height expiry)),
       sats: (some sats),
-      premium: (some premium),
+      total-penalty: (some (+ penalty-offer (default-to u0 (get total-penalty swap)))),
       when: burn-block-height 
     }))))) ;; expiration kicks in
 
 (define-public (cancel-bid (offer-swap-id (optional uint)))
   (let ((offer (unwrap! (get-bid tx-sender offer-swap-id) ERR_NO_SUCH_OFFER))
-        (premium (get premium offer))
+        (penalty (get penalty offer))
         (offerer tx-sender))
-    (and (> premium u0) (as-contract (try! (contract-call? .usda-token transfer premium tx-sender offerer (some 0x707265746D69756D)))))
+    (and (> penalty u0) (as-contract  (try! (stx-transfer-memo? penalty tx-sender offerer 0x707265746D69756D))))
     (map-delete swap-offers {stx-receiver: tx-sender, swap-id: offer-swap-id })
+    (print
+      {
+        type: "cancel-bid",
+        swapId: offer-swap-id,
+        stxReceiver: tx-sender,
+      }
+    )
     (ok true)))
 
 (define-public (cancel-ask (id uint))
@@ -176,21 +265,57 @@
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
             true) 
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
+    (print 
+      {
+        type: "cancel-ask",
+        id: id,
+        askPriced: false,
+      }
+    )
     (ok (map-set swaps id (merge swap {
       ask-priced: false
     })))))
 
 (define-public (claim-collateral (id uint))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
-        (stx-sender (get stx-sender swap)))
+        (stx-sender (get stx-sender swap))
+        (total-penalty (default-to u0 (get total-penalty swap))))
     (asserts! (is-eq tx-sender stx-sender) ERR_INVALID_STX_SENDER)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) ;; expired
             true) ;; or not reserved 
-    (asserts! (not (get done swap)) ERR_ALREADY_DONE)
+    (asserts! (not (get done swap)) ERR_ALREADY_DONE)   
     (try! (as-contract (stx-transfer? (get ustx swap) tx-sender stx-sender)))
+    (and (> total-penalty u0)
+      (try! (as-contract (stx-transfer-memo? total-penalty tx-sender stx-sender 0x707265746D69756D)))) ;; claim penalties if any
+    (print 
+      {
+        type: "claim-collateral",
+        id: id,
+        done: true,
+      }
+    )
     (ok (map-set swaps id (merge swap {done: true}))))
 )
+
+(define-public (claim-penalty (id uint))
+  (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
+        (stx-sender (get stx-sender swap))
+        (total-penalty (default-to u0 (get total-penalty swap))))
+    (match (get expired-height swap)
+            some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) ;; expired
+            true) ;; or not reserved 
+    (asserts! (not (get done swap)) ERR_ALREADY_DONE)
+    (asserts! (> total-penalty u0) ERR_NO_PENALTY)
+    (try! (as-contract (stx-transfer-memo? total-penalty tx-sender stx-sender 0x707265746D69756D))) ;; claim penalties if any
+        (print 
+      {
+        type: "claim-penalty",
+        id: id,
+        total-penalty: none
+      }
+    )
+    (ok (map-set swaps id (merge swap {total-penalty: none})))))
 
 (define-public (submit-swap 
     (id uint)
@@ -206,29 +331,29 @@
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
         (tx-buff (contract-call? 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-helper concat-tx tx))
         (stx-receiver (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))
-        (btc-receiver (unwrap! (get btc-receiver swap) ERR_NO_BTC_RECEIVER)))
+        (btc-receiver (unwrap! (get btc-receiver swap) ERR_NO_BTC_RECEIVER))
+        (penalty (* penalty-rate (get ustx swap)))
+        (remaining-penalty (- (default-to penalty (get total-penalty swap)) penalty)))
       (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN)
       (match (get expired-height swap)
               some-height (asserts! (< burn-block-height some-height) ERR_RESERVATION_EXPIRED) ;; not expired
               (asserts! false ERR_NOT_RESERVED)) ;; needs to be reserved
-      (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
+      (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)     
       (asserts! (not (get done swap)) ERR_ALREADY_DONE)
       (match (contract-call? 'SP2PABAF9FTAJYNFZH93XENAJ8FVY99RRM50D2JG9.clarity-bitcoin-lib-v5 was-tx-mined-compact
                 height tx-buff blockheader proof )
         result
           (let
-            (
-              ;; (result-is-true (asserts! result ERR_PROOF_FALSE))
-              (sats (unwrap! (get sats swap) ERR_NOT_PRICED))
-              
-              )
+            ((sats (unwrap! (get sats swap) ERR_NOT_PRICED)))
             (asserts! (is-none (map-get? submitted-btc-txs result)) ERR_BTC_TX_ALREADY_USED)
             (match (get out (unwrap! (get-out-value tx btc-receiver) ERR_NATIVE_FAILURE))
               out (if (>= (get value out) sats)
                 (begin
                       (map-set swaps id (merge swap {done: true}))
                       (map-set submitted-btc-txs result id)
-                      (as-contract (stx-transfer? (get ustx swap) tx-sender (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))))
+                      (try! (as-contract (stx-transfer-memo? penalty tx-sender stx-receiver 0x707265746D69756D))) 
+                      (and (> remaining-penalty u0) (try! (as-contract (stx-transfer-memo? remaining-penalty tx-sender (get stx-sender swap) 0x707265746D69756D)))) ;; claim penalties if any 
+                      (as-contract (stx-transfer? (get ustx swap) tx-sender stx-receiver)))
                 ERR_TX_VALUE_TOO_SMALL)
             ERR_TX_NOT_FOR_RECEIVER))
         error (err (* error u1000)))))
@@ -255,7 +380,9 @@
         (stx-receiver (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))
         (btc-receiver (unwrap! (get btc-receiver swap) ERR_NO_BTC_RECEIVER))
         (sats (unwrap! (get sats swap) ERR_NOT_PRICED))
-        (tx-buff (contract-call? .clarity-bitcoin-helper-wtx concat-wtx wtx witness-data)))
+        (tx-buff (contract-call? .clarity-bitcoin-helper-wtx concat-wtx wtx witness-data))
+        (penalty (* penalty-rate (get ustx swap)))
+        (remaining-penalty (- (default-to penalty (get total-penalty swap)) penalty)))
       (asserts! (> burn-block-height (+ (get when swap) cooldown)) ERR_IN_COOLDOWN) 
       (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
       (asserts! (not (get done swap)) ERR_ALREADY_DONE)
@@ -266,14 +393,15 @@
                 height tx-buff header tx-index tree-depth wproof witness-merkle-root witness-reserved-value ctx cproof )
         result
           (begin
-            ;; (asserts! result ERR_PROOF_FALSE)
             (asserts! (is-none (map-get? submitted-btc-txs result)) ERR_BTC_TX_ALREADY_USED)
             (match (get out (unwrap! (get-out-value wtx btc-receiver) ERR_NATIVE_FAILURE))
               out (if (>= (get value out) sats)
                 (begin
                       (map-set swaps id (merge swap {done: true}))
                       (map-set submitted-btc-txs result id)
-                      (as-contract (stx-transfer? (get ustx swap) tx-sender (unwrap! (get stx-receiver swap) ERR_NO_STX_RECEIVER))))
+                      (try! (as-contract (stx-transfer-memo? penalty tx-sender stx-receiver 0x707265746D69756D))) 
+                      (and (> remaining-penalty u0) (try! (as-contract (stx-transfer-memo? remaining-penalty tx-sender (get stx-sender swap) 0x707265746D69756D)))) ;; claim penalties if any  
+                      (as-contract (stx-transfer? (get ustx swap) tx-sender stx-receiver)))
                 ERR_TX_VALUE_TOO_SMALL)
             ERR_TX_NOT_FOR_RECEIVER))
         error (err (* error u1000)))))
@@ -284,4 +412,4 @@
     (err ERR_INVALID_ID)))
 
 (define-read-only (get-bid (stx-receiver principal) (id (optional uint)))
-  (map-get? swap-offers {stx-receiver: stx-receiver, swap-id: id}))
+  (map-get? swap-offers {stx-receiver: stx-receiver, swap-id: id})) 

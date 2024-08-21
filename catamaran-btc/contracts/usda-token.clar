@@ -1,10 +1,10 @@
 ;;;;;;;;;;;;;;;;;;;;; SIP 010 ;;;;;;;;;;;;;;;;;;;;;;
-;; (impl-trait 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait)
-(impl-trait .sip-010-trait-ft-standard.sip-010-trait)
+(impl-trait 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait)
+;; (impl-trait .sip-010-trait-ft-standard.sip-010-trait)
 ;; (impl-trait .arkadiko-dao-token-trait-v1.dao-token-trait)
 
 ;; Defines the USDA Stablecoin according to the SIP-010 Standard
-(define-fungible-token usda)
+(define-fungible-token usda u2100000000)
 
 (define-data-var token-uri (string-utf8 256) u"")
 
@@ -88,10 +88,13 @@
 ;; ---------------------------------------------------------
 ;; Testnet Minting UASU Finance
 ;; ---------------------------------------------------------
-(define-public (mint-to (amount uint) (recipient principal))
-  (begin
-    ;; (asserts! (is-eq contract-caller .arkadiko-dao) (err ERR-NOT-AUTHORIZED))
-    ;; anyone can mint let's party 
-    (ft-mint? usda amount recipient)
-  )
-)
+;; (define-public (mint-to (amount uint) (recipient principal))
+;;   (begin
+;;     ;; (asserts! (is-eq contract-caller .arkadiko-dao) (err ERR-NOT-AUTHORIZED))
+;;     ;; anyone can mint let's party 
+;;     ;; (ft-mint? usda amount recipient)
+;;   )
+;; )
+
+(ft-mint? usda u1000000000 'SP29D6YMDNAKN1P045T6Z817RTE1AC0JAA99WAX2B)
+(ft-mint? usda  u1100000000 'SP1JAG6TV2XRYFGJN7CAAN6Z3CEW2YMZWMHJAJV91)
