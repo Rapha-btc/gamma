@@ -1,3 +1,6 @@
+;; happy path, collat and make ask, take ask and simulate swap: good
+;; attempting to simulate swap on expired height erroring 22 correctly
+;; taking ask twice in a expired swap: 
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
   collateralize-and-make-ask 
   u30000000000 
@@ -5,19 +8,32 @@
   u50000000 
   none)
 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+  get-burn-block)
+
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc 
   mint-to  
   u100000000
   'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5)
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc 
+  mint-to  
+  u100000000
+  'ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG)
+  
 
 ::set_tx_sender ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5
+::set_tx_sender ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG
 ::get_assets_maps
-::advance_chain_tip 7
+::advance_chain_tip 3 7
 ::advance_chain_tip 100
 ::set_tx_sender ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
 
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
   take-ask
+  u0)
+
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate
+  get-swap
   u0)
 
 ;; trying to change the ask after it's taken

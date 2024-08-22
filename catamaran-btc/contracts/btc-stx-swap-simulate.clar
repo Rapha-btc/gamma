@@ -29,6 +29,10 @@
 (define-constant cooldown u6)
 (define-constant penalty-rate u3)
 
+(define-public (get-burn-block) 
+  (ok burn-block-height)
+)
+
 (define-private (calculate-penalty (amount uint))
   (/ (* amount penalty-rate) u100))
 
@@ -138,13 +142,12 @@
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
     (stx-receiver (default-to tx-sender (get stx-receiver swap)))
     (new-penalty (some (+ (calculate-penalty (get ustx swap)) (default-to u0 (get total-penalty swap))))))
-    (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)
     (asserts! (get ask-priced swap) ERR_NOT_PRICED)
     (asserts! (not (is-eq tx-sender (get stx-sender swap))) ERR_SAME_SENDER_RECEIVER) 
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (match (get expired-height swap)
             some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
-            true)
+            (asserts! (is-eq tx-sender stx-receiver) ERR_INVALID_STX_RECEIVER)) ;; for private swaps, it was never reserved but stx-reveiver may be designated
     (print 
       {
         type: "take-ask",
@@ -217,7 +220,7 @@
         (offer (unwrap! (get-bid stx-receiver offer-swap-id) ERR_NO_SUCH_OFFER))
         (penalty-offer (get penalty offer))
         (sats-offer (get sats offer))
-        (offer-stx-sender (default-to tx-sender (get stx-sender offer))))
+        (offer-stx-sender (default-to tx-sender (get stx-sender offer)))) 
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_SENDER)
     (asserts! (is-eq tx-sender offer-stx-sender) ERR_INVALID_STX_SENDER) ;; important (not redundant and by transitivity...)
     (asserts! (not (is-eq tx-sender stx-receiver)) ERR_SAME_SENDER_RECEIVER) ;; Corrected: bid taker cannot be bid creator
@@ -225,8 +228,8 @@
     (asserts! (is-eq sats-offer sats) ERR_SATS) ;; user agrees to sats-offer
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
     (match (get expired-height swap)
-            some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) 
-            true) ;; taking bid forbidden before expiration
+            some-height (asserts! (>= burn-block-height some-height) ERR_ALREADY_RESERVED) ;; taking bid forbidden before expiration
+            true) ;; in private swaps, stx sender can change the stx-receiver (none branch of expiration-height)
     (map-delete swap-offers {stx-receiver: stx-receiver, swap-id: offer-swap-id })
     (print 
       {
