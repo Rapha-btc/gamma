@@ -3,8 +3,7 @@
   u30000000000 
   0x001497cae3c32126ba01bbd5a2823de67cedf398f1 
   u50000000 
-  none 
-  u100000000)
+  none)
 
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc 
   mint-to  
@@ -16,11 +15,6 @@
 ::advance_chain_tip 7
 ::advance_chain_tip 100
 ::set_tx_sender ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.usda-token 
-    mint-to 
-    u2000000000
-    'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5)
 
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
   take-ask

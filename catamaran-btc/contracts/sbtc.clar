@@ -4,7 +4,7 @@
 ;; (impl-trait .arkadiko-dao-token-trait-v1.dao-token-trait)
 
 ;; Defines the sbtc Stablecoin according to the SIP-010 Standard
-(define-fungible-token sbtc u2100000000)
+(define-fungible-token sbtc)
 
 (define-data-var token-uri (string-utf8 256) u"")
 
@@ -85,13 +85,13 @@
   (err ERR-NOT-AUTHORIZED)
 )
 
----------------------------------------------------------
-Testnet Minting UASU Finance
----------------------------------------------------------
+;; ---------------------------------------------------------
+;; Testnet Minting UASU Finance
+;; ---------------------------------------------------------
 (define-public (mint-to (amount uint) (recipient principal))
   (begin
     ;; (asserts! (is-eq contract-caller .arkadiko-dao) (err ERR-NOT-AUTHORIZED))
-    anyone can mint let's party 
+    ;; anyone can mint let's party 
     (ft-mint? sbtc amount recipient)
   )
 )
