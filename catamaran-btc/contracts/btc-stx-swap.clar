@@ -29,6 +29,10 @@
 (define-constant cooldown u6)
 (define-constant penalty-rate u3)
 
+(define-public (get-burn-block) 
+  (ok burn-block-height)
+)
+
 (define-private (calculate-penalty (amount uint))
   (/ (* amount penalty-rate) u100))
 
