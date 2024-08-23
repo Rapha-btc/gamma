@@ -175,7 +175,9 @@
       some-id 
         (let ((swap (unwrap! (map-get? swaps some-id) ERR_INVALID_ID))
               (swap-ustx  (get ustx swap))
+              (swap-stx-sender (get stx-sender swap))
               (this-penalty (calculate-penalty swap-ustx)))
+          (asserts! (is-eq swap-stx-sender (unwrap! stx-sender ERR_INVALID_STX_SENDER)) ERR_INVALID_STX_SENDER)
           (asserts! (not (get done swap)) ERR_ALREADY_DONE) ;; ability to make a bid even when the swap is reserved
           (try! (stx-transfer-memo? this-penalty tx-sender nexus 0x707265746D69756D)) ;; hold penalty
           (print 
@@ -183,7 +185,7 @@
               type: "make-bid",
               id: id,
               stxReceiver: tx-sender,
-              stxSender: (some (get stx-sender swap)),
+              stxSender: (some swap-stx-sender),
               ustx: swap-ustx,
               sats: sats,
               penalty: this-penalty, ;; update bids backend
@@ -191,7 +193,7 @@
           )
           (ok (map-set swap-offers 
             { stx-receiver: tx-sender, swap-id: (some some-id) }
-            { stx-sender: (some (get stx-sender swap)),
+            { stx-sender: (some swap-stx-sender),
               ustx: swap-ustx,
               sats: sats ,
               penalty: this-penalty,

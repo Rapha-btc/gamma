@@ -25,6 +25,11 @@
 ;; claiming penalty on behalf of stx-sender of the swap after expiration: penalty correctly transferred collateral intact ok true
 ;; taking bid from swap with no designated stx receiver: 
 ;; swapping without stx-receiver: u8 no stx receiver : good
+;; making a bid to self: same sender error: good
+;; taking bid from a bid that has none but different stx-sender:ERR_INVALID_STX_SENDER u12 good
+;; taking bid from a bid that has none but same stx-sender: good
+;; making bid with swap id but stx-sender is wrong: should not be allowed, but let's try taking it from correct sender differing from the one in bid: invalid sender
+;; errored out if swap-id populated in make-bid, then stx-sender should match swap's
 
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
   collateralize-and-make-ask 
@@ -97,7 +102,7 @@
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
   make-bid
   none
-  (some 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
+  (some 'ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG)
   (some u30000000000)
   u20000000
   )
