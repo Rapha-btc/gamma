@@ -30,7 +30,8 @@
 ;; taking bid from a bid that has none but same stx-sender: good
 ;; making bid with swap id but stx-sender is wrong: should not be allowed, but let's try taking it from correct sender differing from the one in bid: invalid sender
 ;; errored out if swap-id populated in make-bid, then stx-sender should match swap's
-
+;; error out if bidder makes a bid for a swap with wrong stx-sender: u12 : good
+;; make a bid to a swap with wrong ustx should error out: but let's try and take it, I can take it but doesn't change the ustx
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
   collateralize-and-make-ask 
   u30000000000 
@@ -96,6 +97,13 @@
   (some u0)
   (some 'ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG)
   (some u30000000000)
+  u20000000
+  )
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+  make-bid
+  (some u0)
+  (some 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
+  (some u30000000002)
   u20000000
   )
 
