@@ -8,39 +8,16 @@
 ;; claim penatlty of done prior to expiration, error u11, reserved: good
 ;; take-ask stx sender and receiver the same: good u28
 ;; take swap of done swap, error u7: good
-;; happy path designated receiver takes-ask: ok true
-;; taking ask of already reserved u11: good
-;; swapping already reserved swap u22: good
-;; claiming penalty of reserved swap u11: good
-;; swapping without the money (simulated) u1000: good
-;; taking bid from wrong stx-receiver, no such offer u17: good
-;; designated epxired swap takes bid: allowed: correctly reset expired height, correctly reset when/stx-receiver (cooldown after that correct)
-;; taking bid that was taken thus deleted u17: good
-;; claiming penalty before swapping: already reserved
-;; taking bid with swap that is not private (none) happy path
-;; claiming penalty of swap without penalty 21: good
-;; claiming penalty of bid but bid not taken, trying to take from swap, no penalty 21: good
-;; take bid made on my particular swap id ok true: good
-;; take bid made on general (no swap id) that matches conditions ok true: good / and then immediately claiming penalty u11 reserved good
-;; claiming penalty on behalf of stx-sender of the swap after expiration: penalty correctly transferred collateral intact ok true
-;; taking bid from swap with no designated stx receiver: 
-;; swapping without stx-receiver: u8 no stx receiver : good
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
-  collateralize-and-make-ask 
-  u30000000000 
-  0x001497cae3c32126ba01bbd5a2823de67cedf398f1 
-  u50000000 
-  (some 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5))
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   collateralize-and-make-ask 
   u30000000000 
   0x001497cae3c32126ba01bbd5a2823de67cedf398f1 
   u50000000 
   none)
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   get-burn-block)
 
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc 
@@ -53,7 +30,7 @@
   u100000000
   'ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG)
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate  
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc 
   claim-penalty u0)
   
 
@@ -64,7 +41,7 @@
 ::advance_chain_tip 100
 ::set_tx_sender ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   take-ask
   u0)
 
@@ -77,7 +54,7 @@
   u0)
 
 ;; trying to change the ask after it's taken
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   make-ask
   u0
   u40000000
@@ -86,48 +63,43 @@
   u100000000
   )
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   make-bid
   (some u0)
-  (some 'ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG)
-  (some u30000000000)
-  u20000000
-  )
-
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
-  make-bid
-  none
   (some 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
   (some u30000000000)
   u20000000
+  u100000000
   )
 
-  (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   make-bid
   none
   none
   (some u30000000000)
   u20000000
+  u100000000
   )
 
-
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   take-bid
   u0
   (some u0)
   u20000000
+  u100000000
   'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5
   )
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   take-bid
   u0
   none
   u20000000
+  u100000000
   'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5
   )
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   take-bid
   u0
   none
@@ -136,17 +108,17 @@
   'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
   )
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   cancel-bid
     none
   )
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   cancel-bid
     (some u0)
   )
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   cancel-ask
     u0)
 
@@ -156,11 +128,7 @@
   get-swap
   u0)
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate
-  get-bid
-  u0)
-
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   claim-collateral
   u0)
 
@@ -168,7 +136,7 @@
   simulate-swap
   u0)
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   submit-swap
   u0
   u100000
@@ -201,7 +169,7 @@
   'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.fees
 )
 
-(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap
   submit-swap-segwit
   u0  ;; id
   u100000  ;; height
