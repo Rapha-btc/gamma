@@ -30,6 +30,24 @@
 ;; taking bid from a bid that has none but same stx-sender: good
 ;; making bid with swap id but stx-sender is wrong: should not be allowed, but let's try taking it from correct sender differing from the one in bid: invalid sender
 ;; errored out if swap-id populated in make-bid, then stx-sender should match swap's
+;; error out if bidder makes a bid for a swap with wrong stx-sender: u12 : good
+;; make a bid to a swap with wrong ustx should error out: but let's try and take it, I can take it but doesn't change the ustx
+;; correction: making a bid to a swap id must have same ustx: err u18: good
+;; taking bid with wrong sat: u19: good
+;; make a bid to a swap happy path and taken: good
+;; make a bid to  happy path and not taken: good
+;; make a bid to none, and take it with mismatch sats: err u18: good
+;; cancel bid that doesn't exist: u17: good
+;; cancel bid that exists: ok true + correctly refunds penalty: good
+;; cancel ask that doesn't exist: u13: good
+;; cancel ask that exists: ok true + correctly sets ask-priced to false: good
+;; trying to take ask of not priced swap u15 not priced: good
+;; back to bids: take a bid that is none but incorrect stx-sender: u12: good
+;; back to bids: take a bid that is none but correct stx-sender: good
+;; take bid with wrong sats u19: good
+;; take bid with correct sats and swap-id none: good
+;; take a none none bid happy path: good
+
 
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
   collateralize-and-make-ask 
@@ -65,7 +83,7 @@
 ::set_tx_sender ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5
 ::set_tx_sender ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG
 ::get_assets_maps
-::advance_chain_tip 14 7 14 3 7
+::advance_chain_tip 7 14 3 7
 ::advance_chain_tip 100
 ::set_tx_sender ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
 
@@ -95,6 +113,13 @@
   make-bid
   (some u0)
   (some 'ST2CY5V39NHDPWSXMW9QDT3HC3GD6Q6XX4CFRK9AG)
+  (some u30000000000)
+  u20000000
+  )
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+  make-bid
+  (some u0)
+  (some 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
   (some u30000000000)
   u20000000
   )
@@ -137,8 +162,7 @@
   u0
   none
   u20000000
-  u100000000
-  'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+  'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5
   )
 
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
