@@ -28,6 +28,7 @@
 (define-constant expiry u14)
 (define-constant cooldown u6)
 (define-constant penalty-rate u3)
+(define-constant yin-yang 'ST000000000000000000002AMW42H) ;; mainnet Rapha 'SP000000000000000000002Q6VF78
 
 (define-public (get-burn-block) 
   (ok burn-block-height)
@@ -169,6 +170,7 @@
   (begin
     (asserts! (is-none (get-bid tx-sender id)) ERR_OFFER_ALREADY_EXISTS)
     (asserts! (> sats u0) ERR_INVALID_OFFER)
+    (asserts! (not (is-eq tx-sender (default-to yin-yang stx-sender))) ERR_SAME_SENDER_RECEIVER) 
     (match id
       some-id 
         (let ((swap (unwrap! (map-get? swaps some-id) ERR_INVALID_ID))
@@ -181,7 +183,7 @@
               type: "make-bid",
               id: id,
               stxReceiver: tx-sender,
-              stxSender: stx-sender,
+              stxSender: (some (get stx-sender swap)),
               ustx: swap-ustx,
               sats: sats,
               penalty: this-penalty, ;; update bids backend
@@ -305,7 +307,7 @@
     (ok (map-set swaps id (merge swap {done: true}))))
 )
 
-(define-public (claim-penalty (id uint))
+(define-public (claim-penalty (id uint)) ;; penalty should probably be managed in separate contract - if bug, cannot drain collateral with penalty claim loop (but no bugs so far)
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
         (stx-sender (get stx-sender swap))
         (total-penalty (default-to u0 (get total-penalty swap))))
@@ -449,7 +451,7 @@
       (match (contract-call? .sbtc transfer sats tx-sender stx-sender (some 0x707265746D69756D))
         result
                 (begin
-                      (map-set swaps id (merge swap {done: true}))
+                      (map-set swaps id (merge swap {done: true, total-penalty: none})) ;; here we keep record of the total penalty at swapping?
                       (try! (as-contract (stx-transfer-memo? penalty tx-sender stx-receiver 0x707265746D69756D))) 
                       (and (> remaining-penalty u0) (try! (as-contract (stx-transfer-memo? remaining-penalty tx-sender stx-sender 0x707265746D69756D)))) ;; claim penalties if any  
                       (as-contract (stx-transfer? (get ustx swap) tx-sender  stx-receiver)))
