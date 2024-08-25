@@ -37,7 +37,7 @@
 (define-private (calculate-penalty (amount uint))
   (/ (* amount penalty-rate) u100))
 
-(define-map swaps uint {sats: (optional uint), btc-receiver: (optional (buff 40)), stx-sender: principal, ustx: uint, stx-receiver: (optional principal), when: uint, expired-height: (optional uint), done: bool, total-penalty: (optional uint), ask-priced: bool})
+(define-map swaps uint {sats: (optional uint), btc-receiver: (optional (buff 42)), stx-sender: principal, ustx: uint, stx-receiver: (optional principal), when: uint, expired-height: (optional uint), done: bool, total-penalty: (optional uint), ask-priced: bool})
 (define-map swap-offers {stx-receiver: principal, swap-id: (optional uint)} ;; allows a stx-receiver to do an offer per swap-id and 1 without swap-id
   {stx-sender: (optional principal), ustx: uint, sats: uint, penalty: uint})
 ;; (define-map submitted-btc-txs (buff 128) uint)  ;; map between accepted btc txs and swap ids
@@ -50,7 +50,7 @@
 				(ok {uint32: (buff-to-uint-le (unwrap-panic (as-max-len? (unwrap! (slice? data base (+ base u4)) (err ERR-OUT-OF-BOUNDS)) u4))),
 						 ctx: { txbuff: data, index: (+ u4 base)}})))
 
-(define-private (find-out (entry {scriptPubKey: (buff 128), value: (buff 8)}) (result {pubscriptkey: (buff 40), out: (optional {scriptPubKey: (buff 128), value: uint})}))
+(define-private (find-out (entry {scriptPubKey: (buff 128), value: (buff 8)}) (result {pubscriptkey: (buff 42), out: (optional {scriptPubKey: (buff 128), value: uint})}))
   (if (is-eq (get scriptPubKey entry) (get pubscriptkey result))
     (merge result {out: (some {scriptPubKey: (get scriptPubKey entry), value: (get uint32 (unwrap-panic (read-uint32 {txbuff: (get value entry), index: u0})))})})
     result))
@@ -61,10 +61,10 @@
       {outpoint: {hash: (buff 32), index: (buff 4)}, scriptSig: (buff 256), sequence: (buff 4)}),
     outs: (list 8
       {value: (buff 8), scriptPubKey: (buff 128)}),
-    locktime: (buff 4)}) (pubscriptkey (buff 40)))
+    locktime: (buff 4)}) (pubscriptkey (buff 42)))
     (ok (fold find-out (get outs tx) {pubscriptkey: pubscriptkey, out: none})))
 
-(define-public (collateralize-stx (ustx uint) (btc-receiver (optional (buff 40))))
+(define-public (collateralize-stx (ustx uint) (btc-receiver (optional (buff 42))))
   (let ((id (var-get next-id)))
     (print 
       {
@@ -90,7 +90,7 @@
       success (ok id)
       error (err (* error u1000)))))
 
-(define-public (make-ask (id uint) (sats uint) (btc-receiver (buff 40)) (stx-receiver (optional principal)))
+(define-public (make-ask (id uint) (sats uint) (btc-receiver (buff 42)) (stx-receiver (optional principal)))
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID)))
     (asserts! (is-eq tx-sender (get stx-sender swap)) ERR_INVALID_STX_SENDER)
     (asserts! (not (get done swap)) ERR_ALREADY_DONE)
@@ -115,7 +115,7 @@
 
 (define-public (collateralize-and-make-ask
   (ustx uint) 
-  (btc-receiver (buff 40)) 
+  (btc-receiver (buff 42)) 
   (sats uint)
   (stx-receiver (optional principal)))
   (let 
