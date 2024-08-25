@@ -1,5 +1,5 @@
 ;;;;;;;;;;;;;;;;;;;;; SIP 010 ;;;;;;;;;;;;;;;;;;;;;;
-(impl-trait 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait)
+(impl-trait .sip-010-trait-ft-standard.sip-010-trait) ;; Mainnet 'SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.sip-010-trait
 ;; (impl-trait .sip-010-trait-ft-standard.sip-010-trait)
 ;; (impl-trait .arkadiko-dao-token-trait-v1.dao-token-trait)
 
@@ -96,5 +96,5 @@
   )
 )
 
-(ft-mint? sbtc u1000000000 'SP29D6YMDNAKN1P045T6Z817RTE1AC0JAA99WAX2B)
-(ft-mint? sbtc  u1100000000 'SP1JAG6TV2XRYFGJN7CAAN6Z3CEW2YMZWMHJAJV91)
+;; (ft-mint? sbtc u1000000000 'SP29D6YMDNAKN1P045T6Z817RTE1AC0JAA99WAX2B)
+(ft-mint? sbtc  u1100000000 'ST2EZ389HBPTTTXDS0360D3EWQMZ27H9ZST0JH6N7)
