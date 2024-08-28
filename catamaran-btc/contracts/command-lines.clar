@@ -47,7 +47,7 @@
 ;; take bid with wrong sats u19: good
 ;; take bid with correct sats and swap-id none: good
 ;; take a none none bid happy path: good
-
+;; testing collateralize and take bid: happy path and params mismatch paths: good
 
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
   collateralize-and-make-ask 
@@ -86,6 +86,7 @@
 ::advance_chain_tip 7 14 3 7
 ::advance_chain_tip 100
 ::set_tx_sender ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+::set_tx_sender ST2EZ389HBPTTTXDS0360D3EWQMZ27H9ZST0JH6N7
 
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
   take-ask
@@ -140,6 +141,12 @@
   u20000000
   )
 
+(contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
+  collateralize-and-take-bid  
+  u30000000000
+  0x001497cae3c32126ba01bbd5a2823de67cedf398f1 
+  u50000000 
+  'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5)
 
 (contract-call? 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.btc-stx-swap-simulate 
   take-bid
