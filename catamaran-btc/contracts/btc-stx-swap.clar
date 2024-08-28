@@ -135,6 +135,34 @@
     )
     (ok swap-id)))
 
+(define-public (collateralize-and-take-bid 
+  (ustx uint) 
+  (btc-receiver (buff 42))
+  (sats uint)
+  (stx-receiver principal)) ;; taking a general bid here
+  (let 
+    ((swap-id (try! (collateralize-stx ustx (some btc-receiver))))
+    (offer (unwrap! (get-bid stx-receiver none) ERR_NO_SUCH_OFFER)))
+    (try! (take-bid swap-id none sats stx-receiver))
+    (print   
+      {
+        type: "collateralize-and-take-bid",
+        id: swap-id,
+        ustx: ustx,
+        stxSender: tx-sender,
+        done: false,
+        when: burn-block-height,
+        fees: "zero",
+        sats: (some sats),
+        btcReceiver: (some btc-receiver),
+        stxReceiver: stx-receiver,
+        total-penalty: (get penalty offer),
+        askPriced: false,
+        expiredHeight: (some (+ burn-block-height expiry)),
+      }
+    )
+    (ok swap-id)))
+
 (define-public (take-ask (id uint)) ;; BTC sender accepts the initial offer of STX sender
   (let ((swap (unwrap! (map-get? swaps id) ERR_INVALID_ID))
     (stx-receiver (default-to tx-sender (get stx-receiver swap)))
